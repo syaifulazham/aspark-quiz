@@ -5,18 +5,18 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme {
-  /* Brand — Aurora Violet */
-  --color-brand-50: oklch(0.971 0.014 308);
-  --color-brand-100: oklch(0.943 0.033 308);
-  --color-brand-200: oklch(0.894 0.064 306);
-  --color-brand-300: oklch(0.822 0.108 305);
-  --color-brand-400: oklch(0.731 0.156 302);
-  --color-brand-500: oklch(0.646 0.19 299);
-  --color-brand-600: oklch(0.572 0.2 297);
-  --color-brand-700: oklch(0.492 0.18 296);
-  --color-brand-800: oklch(0.415 0.15 296);
-  --color-brand-900: oklch(0.348 0.12 297);
-  --color-brand-950: oklch(0.238 0.085 299);
+  /* Brand — Spark Orange */
+  --color-brand-50: oklch(0.975 0.015 40);
+  --color-brand-100: oklch(0.94 0.04 38);
+  --color-brand-200: oklch(0.88 0.08 35);
+  --color-brand-300: oklch(0.80 0.13 32);
+  --color-brand-400: oklch(0.72 0.17 30);
+  --color-brand-500: oklch(0.63 0.19 28);
+  --color-brand-600: oklch(0.55 0.19 25);
+  --color-brand-700: oklch(0.47 0.16 24);
+  --color-brand-800: oklch(0.39 0.13 24);
+  --color-brand-900: oklch(0.32 0.10 25);
+  --color-brand-950: oklch(0.22 0.07 26);
 
   /* Ground — Slate */
   --color-ink-50: oklch(0.984 0.003 248);
@@ -31,10 +31,15 @@
   --color-ink-900: oklch(0.225 0.019 263);
   --color-ink-950: oklch(0.158 0.018 265);
 
-  /* Accent — Warm Amber */
-  --color-accent-400: oklch(0.822 0.155 76);
-  --color-accent-500: oklch(0.76 0.17 70);
-  --color-accent-600: oklch(0.672 0.165 60);
+  /* Accent — Deep Orange */
+  --color-accent-400: oklch(0.72 0.17 30);
+  --color-accent-500: oklch(0.63 0.19 28);
+  --color-accent-600: oklch(0.55 0.19 25);
+
+  /* Navy — Sidebar/Nav */
+  --color-navy-800: oklch(0.25 0.03 250);
+  --color-navy-900: oklch(0.20 0.03 252);
+  --color-navy-950: oklch(0.15 0.03 255);
 
   /* Semantic */
   --color-success-500: oklch(0.7 0.17 152);
@@ -43,7 +48,7 @@
   --color-info-500: oklch(0.685 0.15 233);
 
   /* Typography */
-  --font-display: "Fraunces", ui-serif, Georgia, serif;
+  --font-display: "DM Serif Display", ui-serif, Georgia, serif;
   --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 
@@ -53,7 +58,7 @@
   --shadow-card: 0 1px 2px oklch(0.158 0.018 265 / 0.06),
     0 4px 12px oklch(0.158 0.018 265 / 0.05);
   --shadow-float: 0 8px 32px oklch(0.158 0.018 265 / 0.12);
-  --shadow-glow: 0 0 0 4px oklch(0.572 0.2 297 / 0.14);
+  --shadow-glow: 0 0 0 4px oklch(0.55 0.19 25 / 0.14);
 }
 
 @layer base {
@@ -136,13 +141,13 @@
   --chart-4: var(--color-info-500);
   --chart-5: var(--color-warning-500);
   --radius: 0.625rem;
-  --sidebar: var(--color-ink-50);
-  --sidebar-foreground: var(--color-ink-900);
-  --sidebar-primary: var(--color-brand-600);
+  --sidebar: var(--color-navy-900);
+  --sidebar-foreground: var(--color-ink-100);
+  --sidebar-primary: var(--color-brand-500);
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: var(--color-ink-100);
-  --sidebar-accent-foreground: var(--color-ink-900);
-  --sidebar-border: var(--color-ink-200);
+  --sidebar-accent: var(--color-navy-800);
+  --sidebar-accent-foreground: var(--color-ink-100);
+  --sidebar-border: var(--color-navy-800);
   --sidebar-ring: var(--color-brand-500);
 }
 

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
-import { Separator } from "@/components/ui/separator";
+
 import { buttonVariants } from "@/components/ui/button";
 import {
   LayoutDashboard,
@@ -15,6 +15,7 @@ import {
   Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { LogoutButton } from "./logout-button";
 
 const navItems = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
@@ -45,22 +46,22 @@ export default async function AdminLayout({
   return (
     <div className="flex min-h-screen">
       {/* Sidebar */}
-      <aside className="flex w-64 flex-col border-r border-border bg-card">
+      <aside className="flex w-64 flex-col bg-[var(--color-navy-900)] text-white">
         <div className="p-6">
-          <h1 className="font-display text-xl font-semibold tracking-tight">
+          <h1 className="font-display text-xl font-semibold tracking-tight text-white">
             Quizzly
           </h1>
-          <p className="mt-0.5 text-xs text-muted-foreground">Admin Portal</p>
+          <p className="mt-0.5 text-xs text-white/60">Admin Portal</p>
         </div>
-        <Separator />
-        <nav className="flex flex-1 flex-col gap-1 p-3">
+        <div className="mx-3 h-px bg-white/10" />
+        <nav className="flex flex-1 flex-col gap-0.5 p-3">
           {navItems.map((item) => (
             <Link
               key={item.href}
               href={item.href}
               className={cn(
                 buttonVariants({ variant: "ghost", size: "default" }),
-                "justify-start gap-3"
+                "justify-start gap-3 text-white/80 hover:text-white hover:bg-white/10"
               )}
             >
               <item.icon className="h-4 w-4" />
@@ -68,11 +69,14 @@ export default async function AdminLayout({
             </Link>
           ))}
         </nav>
-        <Separator />
+        <div className="mx-3 h-px bg-white/10" />
         <div className="p-4">
-          <p className="truncate text-xs text-muted-foreground">
+          <p className="truncate text-xs text-white/50">
             {user.email}
           </p>
+          <div className="mt-2">
+            <LogoutButton />
+          </div>
         </div>
       </aside>
 
