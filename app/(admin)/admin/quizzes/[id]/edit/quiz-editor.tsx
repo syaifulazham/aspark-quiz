@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useRef, useCallback } from "react";
+import { useState, useTransition, useRef, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -82,6 +82,7 @@ export function QuizEditor({ quiz, version, questions: initialQuestions }: Props
   const [previewOptions, setPreviewOptions] = useState<Record<string, boolean>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
 
   function handleAIGenerated(
     generated: Array<{
@@ -337,6 +338,42 @@ export function QuizEditor({ quiz, version, questions: initialQuestions }: Props
     }
   }, [currentQuestion, quiz.id, questions, selectedIndex, startTransition]);
 
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setDragOver(false);
+    const file = Array.from(e.dataTransfer.files).find((f) => f.type.startsWith("image/"));
+    if (file) {
+      handleImageUpload(file);
+    } else if (e.dataTransfer.files.length > 0) {
+      toast.error("Only image files are supported");
+    }
+  }
+
+  useEffect(() => {
+    function onPaste(e: ClipboardEvent) {
+      if (!currentQuestion) return;
+      const items = e.clipboardData?.items
+        ? Array.from(e.clipboardData.items)
+        : [];
+      let file =
+        items
+          .find((item) => item.kind === "file" && item.type.startsWith("image/"))
+          ?.getAsFile() ?? null;
+      if (!file && e.clipboardData?.files) {
+        file =
+          Array.from(e.clipboardData.files).find((f) =>
+            f.type.startsWith("image/")
+          ) ?? null;
+      }
+      if (file) {
+        e.preventDefault();
+        handleImageUpload(file);
+      }
+    }
+    document.addEventListener("paste", onPaste);
+    return () => document.removeEventListener("paste", onPaste);
+  }, [currentQuestion, handleImageUpload]);
+
   function handleRemoveImage() {
     if (!currentQuestion) return;
     const updated = { ...currentQuestion, media_key: null, media_alt: null };
@@ -468,13 +505,23 @@ export function QuizEditor({ quiz, version, questions: initialQuestions }: Props
               </div>
 
               {/* Image attachment */}
-              <div className="space-y-2">
+              <div
+                className="space-y-2"
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setDragOver(true);
+                }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={handleDrop}
+              >
                 {currentQuestion.media_key ? (
                   <div className="relative inline-block">
                     <img
-                      src={`${process.env.NEXT_PUBLIC_R2_PUBLIC_URL || ""}/${currentQuestion.media_key}`}
+                      src={`https://${process.env.NEXT_PUBLIC_R2_PUBLIC_HOST}/${currentQuestion.media_key}`}
                       alt={currentQuestion.media_alt || ""}
-                      className="max-h-48 rounded-lg border border-border object-contain"
+                      className={`max-h-48 rounded-lg border object-contain transition ${
+                        dragOver ? "border-primary ring-2 ring-primary/30" : "border-border"
+                      }`}
                     />
                     <button
                       onClick={handleRemoveImage}
@@ -483,6 +530,11 @@ export function QuizEditor({ quiz, version, questions: initialQuestions }: Props
                     >
                       <X className="h-3 w-3" />
                     </button>
+                    {dragOver && (
+                      <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-primary/20 text-xs font-medium text-primary">
+                        Drop to replace
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <>
@@ -497,15 +549,30 @@ export function QuizEditor({ quiz, version, questions: initialQuestions }: Props
                         e.target.value = "";
                       }}
                     />
-                    <Button
-                      variant="outline"
-                      size="sm"
+                    <button
+                      type="button"
                       onClick={() => fileInputRef.current?.click()}
                       disabled={uploading}
+                      className={`flex w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-6 text-sm transition ${
+                        dragOver
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-muted-foreground/25 text-muted-foreground hover:border-primary/50 hover:bg-primary/5 hover:text-foreground"
+                      }`}
                     >
-                      <ImagePlus className="mr-2 h-4 w-4" />
-                      {uploading ? "Uploading..." : "Add image"}
-                    </Button>
+                      <ImagePlus className="h-6 w-6" />
+                      <span className="font-medium">
+                        {uploading
+                          ? "Uploading..."
+                          : dragOver
+                          ? "Drop image here"
+                          : "Add image"}
+                      </span>
+                      {!uploading && !dragOver && (
+                        <span className="text-xs text-muted-foreground">
+                          Drag &amp; drop, paste from clipboard, or click to browse
+                        </span>
+                      )}
+                    </button>
                   </>
                 )}
               </div>

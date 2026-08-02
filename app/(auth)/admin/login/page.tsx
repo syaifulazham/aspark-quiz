@@ -1,8 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { createClient } from "@/lib/supabase/client";
-import { useRouter } from "next/navigation";
+import { useActionState } from "react";
+import { login } from "./actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,31 +14,9 @@ import {
 } from "@/components/ui/card";
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const router = useRouter();
-  const supabase = createClient();
-
-  async function handleLogin(e: React.FormEvent) {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
-
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    if (error) {
-      setError(error.message);
-      setLoading(false);
-    } else {
-      router.push("/admin");
-      router.refresh();
-    }
-  }
+  const [state, formAction, pending] = useActionState(login, {
+    error: null,
+  });
 
   return (
     <div className="flex min-h-screen items-center justify-center p-4">
@@ -51,16 +28,16 @@ export default function LoginPage() {
           <CardDescription>Sign in to the admin portal</CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleLogin} className="flex flex-col gap-4">
+          <form action={formAction} className="flex flex-col gap-4">
             <div className="grid gap-2">
               <Label htmlFor="email">Email</Label>
               <Input
                 id="email"
+                name="email"
                 type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
                 required
                 placeholder="admin@example.com"
+                autoComplete="email"
               />
             </div>
 
@@ -68,19 +45,19 @@ export default function LoginPage() {
               <Label htmlFor="password">Password</Label>
               <Input
                 id="password"
+                name="password"
                 type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
                 required
+                autoComplete="current-password"
               />
             </div>
 
-            {error && (
-              <p className="text-sm text-destructive">{error}</p>
+            {state.error && (
+              <p className="text-sm text-destructive">{state.error}</p>
             )}
 
-            <Button type="submit" disabled={loading} className="w-full">
-              {loading ? "Signing in..." : "Sign in"}
+            <Button type="submit" disabled={pending} className="w-full">
+              {pending ? "Signing in..." : "Sign in"}
             </Button>
           </form>
         </CardContent>

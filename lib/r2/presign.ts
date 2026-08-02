@@ -3,15 +3,15 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 const R2 = new S3Client({
   region: "auto",
-  endpoint: `https://${process.env.CLOUDFLARE_R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
   credentials: {
-    accessKeyId: process.env.CLOUDFLARE_R2_ACCESS_KEY_ID!,
-    secretAccessKey: process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY!,
+    accessKeyId: process.env.R2_ACCESS_KEY_ID!,
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
   },
 });
 
-const BUCKET = process.env.CLOUDFLARE_R2_BUCKET_NAME!;
-const PUBLIC_HOST = process.env.CLOUDFLARE_R2_PUBLIC_HOST!;
+const BUCKET = process.env.R2_BUCKET!;
+const PUBLIC_HOST = process.env.NEXT_PUBLIC_R2_PUBLIC_HOST!;
 
 interface PresignOptions {
   orgId: string;
