@@ -83,6 +83,16 @@ export function QuizEditor({ quiz, version, questions: initialQuestions }: Props
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const saveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  function debouncedSave(key: string, fn: () => Promise<unknown>, delay = 600) {
+    clearTimeout(saveTimers.current[key]);
+    saveTimers.current[key] = setTimeout(() => {
+      startTransition(async () => {
+        await fn();
+      });
+    }, delay);
+  }
 
   function handleAIGenerated(
     generated: Array<{
@@ -207,9 +217,9 @@ export function QuizEditor({ quiz, version, questions: initialQuestions }: Props
     const updated = { ...currentQuestion, stem: { text } };
     setQuestions(questions.map((q, i) => (i === selectedIndex ? updated : q)));
 
-    startTransition(async () => {
-      await updateQuestion(quiz.id, currentQuestion.id, { stem: { text } });
-    });
+    debouncedSave(`stem-${currentQuestion.id}`, () =>
+      updateQuestion(quiz.id, currentQuestion.id, { stem: { text } })
+    );
   }
 
   function handlePointsChange(points: number) {
@@ -217,34 +227,69 @@ export function QuizEditor({ quiz, version, questions: initialQuestions }: Props
     const updated = { ...currentQuestion, points };
     setQuestions(questions.map((q, i) => (i === selectedIndex ? updated : q)));
 
-    startTransition(async () => {
-      await updateQuestion(quiz.id, currentQuestion.id, { points });
-    });
+    debouncedSave(`points-${currentQuestion.id}`, () =>
+      updateQuestion(quiz.id, currentQuestion.id, { points })
+    );
   }
 
   function handleAddOption() {
     if (!currentQuestion) return;
+    const questionId = currentQuestion.id;
+    const tempId = `temp-${Date.now()}`;
+    const position = currentQuestion.question_options.length + 1;
+
+    // Optimistic insert
+    const newOption: OptionData = {
+      id: tempId,
+      label: { text: "" },
+      is_correct: false,
+      position,
+    };
+    setQuestions((qs) =>
+      qs.map((q) =>
+        q.id === questionId
+          ? { ...q, question_options: [...q.question_options, newOption] }
+          : q
+      )
+    );
+
     startTransition(async () => {
       const result = await addOption(quiz.id, {
-        question_id: currentQuestion.id,
+        question_id: questionId,
         label: { text: "" },
         is_correct: false,
+        position,
       });
 
       if (result.error) {
         toast.error(result.error);
+        // Rollback
+        setQuestions((qs) =>
+          qs.map((q) =>
+            q.id === questionId
+              ? {
+                  ...q,
+                  question_options: q.question_options.filter(
+                    (o) => o.id !== tempId
+                  ),
+                }
+              : q
+          )
+        );
       } else if (result.id) {
-        const newOption: OptionData = {
-          id: result.id,
-          label: { text: "" },
-          is_correct: false,
-          position: currentQuestion.question_options.length + 1,
-        };
-        const updated = {
-          ...currentQuestion,
-          question_options: [...currentQuestion.question_options, newOption],
-        };
-        setQuestions(questions.map((q, i) => (i === selectedIndex ? updated : q)));
+        // Reconcile temp id with real id
+        setQuestions((qs) =>
+          qs.map((q) =>
+            q.id === questionId
+              ? {
+                  ...q,
+                  question_options: q.question_options.map((o) =>
+                    o.id === tempId ? { ...o, id: result.id! } : o
+                  ),
+                }
+              : q
+          )
+        );
       }
     });
   }
@@ -257,9 +302,11 @@ export function QuizEditor({ quiz, version, questions: initialQuestions }: Props
     const updated = { ...currentQuestion, question_options: updatedOptions };
     setQuestions(questions.map((q, i) => (i === selectedIndex ? updated : q)));
 
-    startTransition(async () => {
-      await updateOption(quiz.id, optionId, { label: { text } });
-    });
+    // Skip server save for options not yet persisted (temp ids)
+    if (optionId.startsWith("temp-")) return;
+    debouncedSave(`opt-${optionId}`, () =>
+      updateOption(quiz.id, optionId, { label: { text } })
+    );
   }
 
   function handleSetCorrect(optionId: string) {
@@ -287,9 +334,11 @@ export function QuizEditor({ quiz, version, questions: initialQuestions }: Props
       setQuestions(questions.map((q, i) => (i === selectedIndex ? updated : q)));
 
       startTransition(async () => {
-        for (const o of currentQuestion.question_options) {
-          await updateOption(quiz.id, o.id, { is_correct: o.id === optionId });
-        }
+        await Promise.all(
+          currentQuestion.question_options.map((o) =>
+            updateOption(quiz.id, o.id, { is_correct: o.id === optionId })
+          )
+        );
       });
     }
   }
@@ -387,16 +436,45 @@ export function QuizEditor({ quiz, version, questions: initialQuestions }: Props
 
   function handleDeleteOption(optionId: string) {
     if (!currentQuestion) return;
+    const questionId = currentQuestion.id;
+    const removed = currentQuestion.question_options.find((o) => o.id === optionId);
+
+    // Optimistic remove
+    setQuestions((qs) =>
+      qs.map((q) =>
+        q.id === questionId
+          ? {
+              ...q,
+              question_options: q.question_options.filter(
+                (o) => o.id !== optionId
+              ),
+            }
+          : q
+      )
+    );
+
+    // Option not yet persisted — nothing to delete server-side
+    if (optionId.startsWith("temp-")) return;
+
     startTransition(async () => {
       const result = await deleteOption(quiz.id, optionId);
       if (result.error) {
         toast.error(result.error);
-      } else {
-        const updatedOptions = currentQuestion.question_options.filter(
-          (o) => o.id !== optionId
-        );
-        const updated = { ...currentQuestion, question_options: updatedOptions };
-        setQuestions(questions.map((q, i) => (i === selectedIndex ? updated : q)));
+        // Rollback
+        if (removed) {
+          setQuestions((qs) =>
+            qs.map((q) =>
+              q.id === questionId
+                ? {
+                    ...q,
+                    question_options: [...q.question_options, removed].sort(
+                      (a, b) => a.position - b.position
+                    ),
+                  }
+                : q
+            )
+          );
+        }
       }
     });
   }
@@ -666,9 +744,9 @@ export function QuizEditor({ quiz, version, questions: initialQuestions }: Props
                         const val = e.target.value ? parseFloat(e.target.value) : null;
                         const updated = { ...currentQuestion, numeric_answer: val };
                         setQuestions(questions.map((q, i) => (i === selectedIndex ? updated : q)));
-                        startTransition(async () => {
-                          await updateQuestion(quiz.id, currentQuestion.id, { numeric_answer: val });
-                        });
+                        debouncedSave(`num-${currentQuestion.id}`, () =>
+                          updateQuestion(quiz.id, currentQuestion.id, { numeric_answer: val })
+                        );
                       }}
                       placeholder="e.g. 42"
                     />
@@ -686,9 +764,9 @@ export function QuizEditor({ quiz, version, questions: initialQuestions }: Props
                           const val = parseFloat(e.target.value) || 0;
                           const updated = { ...currentQuestion, numeric_tolerance: val };
                           setQuestions(questions.map((q, i) => (i === selectedIndex ? updated : q)));
-                          startTransition(async () => {
-                            await updateQuestion(quiz.id, currentQuestion.id, { numeric_tolerance: val });
-                          });
+                          debouncedSave(`tol-${currentQuestion.id}`, () =>
+                            updateQuestion(quiz.id, currentQuestion.id, { numeric_tolerance: val })
+                          );
                         }}
                       />
                     </div>
@@ -701,9 +779,9 @@ export function QuizEditor({ quiz, version, questions: initialQuestions }: Props
                           const val = e.target.value || null;
                           const updated = { ...currentQuestion, numeric_unit: val };
                           setQuestions(questions.map((q, i) => (i === selectedIndex ? updated : q)));
-                          startTransition(async () => {
-                            await updateQuestion(quiz.id, currentQuestion.id, { numeric_unit: val });
-                          });
+                          debouncedSave(`unit-${currentQuestion.id}`, () =>
+                            updateQuestion(quiz.id, currentQuestion.id, { numeric_unit: val })
+                          );
                         }}
                         placeholder="e.g. cm, kg"
                       />
@@ -761,9 +839,9 @@ export function QuizEditor({ quiz, version, questions: initialQuestions }: Props
                         const val = e.target.value ? parseInt(e.target.value) : null;
                         const updated = { ...currentQuestion, time_seconds: val };
                         setQuestions(questions.map((q, i) => (i === selectedIndex ? updated : q)));
-                        startTransition(async () => {
-                          await updateQuestion(quiz.id, currentQuestion.id, { time_seconds: val });
-                        });
+                        debouncedSave(`time-${currentQuestion.id}`, () =>
+                          updateQuestion(quiz.id, currentQuestion.id, { time_seconds: val })
+                        );
                       }}
                       className="h-8"
                       placeholder="∞"

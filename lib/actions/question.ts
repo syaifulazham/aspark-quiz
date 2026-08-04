@@ -1,7 +1,6 @@
 "use server";
 
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { revalidatePath } from "next/cache";
 
 interface QuestionPayload {
   quiz_version_id: string;
@@ -84,7 +83,6 @@ export async function addQuestion(quizId: string, payload: QuestionPayload) {
     ] as never);
   }
 
-  revalidatePath(`/admin/quizzes/${quizId}/edit`);
   return { id: questionId };
 }
 
@@ -107,7 +105,6 @@ export async function updateQuestion(
 
   if (error) return { error: error.message };
 
-  revalidatePath(`/admin/quizzes/${quizId}/edit`);
   return { success: true };
 }
 
@@ -126,7 +123,6 @@ export async function deleteQuestion(quizId: string, questionId: string) {
 
   if (error) return { error: error.message };
 
-  revalidatePath(`/admin/quizzes/${quizId}/edit`);
   return { success: true };
 }
 
@@ -153,7 +149,6 @@ export async function reorderQuestions(
 
   await Promise.all(updates);
 
-  revalidatePath(`/admin/quizzes/${quizId}/edit`);
   return { success: true };
 }
 
@@ -174,13 +169,15 @@ export async function addOption(quizId: string, payload: OptionPayload) {
   const orgId = (profile as unknown as { org_id: string })?.org_id;
   if (!orgId) return { error: "No organization" };
 
-  // Get next position
-  const { count } = await supabase
-    .from("question_options")
-    .select("*", { count: "exact", head: true })
-    .eq("question_id", payload.question_id);
-
-  const position = payload.position ?? (count ?? 0) + 1;
+  // Use provided position, otherwise get next position
+  let position = payload.position;
+  if (!position) {
+    const { count } = await supabase
+      .from("question_options")
+      .select("*", { count: "exact", head: true })
+      .eq("question_id", payload.question_id);
+    position = (count ?? 0) + 1;
+  }
 
   const { data: option, error } = await supabase
     .from("question_options")
@@ -196,7 +193,6 @@ export async function addOption(quizId: string, payload: OptionPayload) {
 
   if (error) return { error: error.message };
 
-  revalidatePath(`/admin/quizzes/${quizId}/edit`);
   return { id: (option as unknown as { id: string }).id };
 }
 
@@ -219,7 +215,6 @@ export async function updateOption(
 
   if (error) return { error: error.message };
 
-  revalidatePath(`/admin/quizzes/${quizId}/edit`);
   return { success: true };
 }
 
@@ -238,6 +233,5 @@ export async function deleteOption(quizId: string, optionId: string) {
 
   if (error) return { error: error.message };
 
-  revalidatePath(`/admin/quizzes/${quizId}/edit`);
   return { success: true };
 }
