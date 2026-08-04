@@ -42,13 +42,17 @@ export async function addQuestion(quizId: string, payload: QuestionPayload) {
   const orgId = (profile as unknown as { org_id: string })?.org_id;
   if (!orgId) return { error: "No organization" };
 
-  // Get next position
-  const { count } = await supabase
+  // Get next position from MAX (count breaks after mid-list deletions)
+  const { data: maxQuestion } = await supabase
     .from("questions")
-    .select("*", { count: "exact", head: true })
-    .eq("quiz_version_id", payload.quiz_version_id);
+    .select("position")
+    .eq("quiz_version_id", payload.quiz_version_id)
+    .order("position", { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
-  const position = (count ?? 0) + 1;
+  const position =
+    ((maxQuestion as unknown as { position: number } | null)?.position ?? 0) + 1;
 
   const { data: question, error } = await supabase
     .from("questions")
@@ -169,14 +173,18 @@ export async function addOption(quizId: string, payload: OptionPayload) {
   const orgId = (profile as unknown as { org_id: string })?.org_id;
   if (!orgId) return { error: "No organization" };
 
-  // Use provided position, otherwise get next position
+  // Use provided position, otherwise get next position from MAX
   let position = payload.position;
   if (!position) {
-    const { count } = await supabase
+    const { data: maxOption } = await supabase
       .from("question_options")
-      .select("*", { count: "exact", head: true })
-      .eq("question_id", payload.question_id);
-    position = (count ?? 0) + 1;
+      .select("position")
+      .eq("question_id", payload.question_id)
+      .order("position", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    position =
+      ((maxOption as unknown as { position: number } | null)?.position ?? 0) + 1;
   }
 
   const { data: option, error } = await supabase

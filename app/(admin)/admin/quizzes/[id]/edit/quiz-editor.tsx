@@ -236,7 +236,8 @@ export function QuizEditor({ quiz, version, questions: initialQuestions }: Props
     if (!currentQuestion) return;
     const questionId = currentQuestion.id;
     const tempId = `temp-${Date.now()}`;
-    const position = currentQuestion.question_options.length + 1;
+    const position =
+      Math.max(0, ...currentQuestion.question_options.map((o) => o.position)) + 1;
 
     // Optimistic insert
     const newOption: OptionData = {
