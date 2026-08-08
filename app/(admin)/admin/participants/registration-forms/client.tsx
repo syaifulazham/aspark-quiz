@@ -62,6 +62,7 @@ const AVAILABLE_FIELDS = [
   { value: "full_name", label: "Full Name (required)" },
   { value: "email", label: "Email" },
   { value: "phone", label: "Phone" },
+  { value: "grade", label: "Grade" },
   { value: "school", label: "School" },
   { value: "agency", label: "Agency" },
   { value: "nationality", label: "Nationality" },

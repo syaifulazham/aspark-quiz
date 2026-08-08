@@ -277,6 +277,7 @@ export type Database = {
           date_of_birth: string | null;
           age: number | null;
           gender: "male" | "female" | "other" | "undisclosed" | null;
+          grade: string | null;
           school: string | null;
           agency: string | null;
           email: string | null;
@@ -295,6 +296,7 @@ export type Database = {
           date_of_birth?: string | null;
           age?: number | null;
           gender?: "male" | "female" | "other" | "undisclosed" | null;
+          grade?: string | null;
           school?: string | null;
           agency?: string | null;
           email?: string | null;
@@ -313,6 +315,7 @@ export type Database = {
           date_of_birth?: string | null;
           age?: number | null;
           gender?: "male" | "female" | "other" | "undisclosed" | null;
+          grade?: string | null;
           school?: string | null;
           agency?: string | null;
           email?: string | null;

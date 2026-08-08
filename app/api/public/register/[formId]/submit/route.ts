@@ -77,7 +77,7 @@ export async function POST(
     competition_session_id: row.competition_session_id || undefined,
   };
 
-  const optionalFields = ["email", "phone", "school", "agency", "nationality", "date_of_birth", "gender"];
+  const optionalFields = ["email", "phone", "grade", "school", "agency", "nationality", "date_of_birth", "gender"];
   for (const field of optionalFields) {
     if (row.fields.includes(field) && body[field]) {
       participant[field] = body[field];

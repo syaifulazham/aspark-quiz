@@ -14,6 +14,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Plus, GripVertical, Trash2, Check, ImagePlus, X, Eye, Code } from "lucide-react";
 import { addQuestion, updateQuestion, deleteQuestion, addOption, updateOption, deleteOption } from "@/lib/actions/question";
 import { KaTeXRenderer } from "@/components/katex-renderer";
@@ -83,6 +91,7 @@ export function QuizEditor({ quiz, version, questions: initialQuestions }: Props
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const saveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   function debouncedSave(key: string, fn: () => Promise<unknown>, delay = 600) {
@@ -207,6 +216,7 @@ export function QuizEditor({ quiz, version, questions: initialQuestions }: Props
       } else {
         setQuestions(questions.filter((q) => q.id !== questionId));
         setSelectedIndex(Math.max(0, selectedIndex - 1));
+        setDeleteConfirmOpen(false);
         toast.success("Question deleted");
       }
     });
@@ -855,11 +865,43 @@ export function QuizEditor({ quiz, version, questions: initialQuestions }: Props
                 variant="destructive"
                 size="sm"
                 className="w-full"
-                onClick={() => handleDeleteQuestion(currentQuestion.id)}
+                onClick={() => setDeleteConfirmOpen(true)}
               >
                 <Trash2 className="mr-2 h-3 w-3" />
                 Delete question
               </Button>
+
+              <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Delete question?</DialogTitle>
+                    <DialogDescription>
+                      This will permanently delete question {selectedIndex + 1}{" "}
+                      and all its options. This action cannot be undone.
+                    </DialogDescription>
+                  </DialogHeader>
+                  {(currentQuestion.stem as { text?: string })?.text && (
+                    <p className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground line-clamp-3">
+                      {(currentQuestion.stem as { text?: string }).text}
+                    </p>
+                  )}
+                  <DialogFooter>
+                    <Button
+                      variant="outline"
+                      onClick={() => setDeleteConfirmOpen(false)}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      disabled={isPending}
+                      onClick={() => handleDeleteQuestion(currentQuestion.id)}
+                    >
+                      {isPending ? "Deleting..." : "Delete question"}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
             </div>
           )}
         </div>

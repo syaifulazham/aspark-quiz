@@ -36,12 +36,15 @@ const FIELD_LABELS: Record<string, string> = {
   full_name: "Full Name",
   email: "Email",
   phone: "Phone",
+  grade: "Grade",
   school: "School",
   agency: "Agency / Organization",
   nationality: "Nationality",
   date_of_birth: "Date of Birth",
   gender: "Gender",
 };
+
+const GRADES = Array.from({ length: 12 }, (_, i) => `Grade ${i + 1}`);
 
 const REQUIRED_FIELDS = ["personal_id", "full_name"];
 
@@ -435,6 +438,24 @@ export function RegisterForm({ form }: Props) {
                       </DialogContent>
                     </Dialog>
                   </>
+                ) : field === "grade" ? (
+                  <Select
+                    value={formData.grade || ""}
+                    onValueChange={(v: string | null) =>
+                      v && setFormData({ ...formData, grade: v })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select grade" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {GRADES.map((g) => (
+                        <SelectItem key={g} value={g}>
+                          {g}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 ) : field === "gender" ? (
                   <Select
                     value={formData.gender || ""}

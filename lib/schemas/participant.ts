@@ -19,6 +19,7 @@ export const participantSchema = z.object({
     .enum(["male", "female", "other", "undisclosed"])
     .optional()
     .nullable(),
+  grade: z.string().max(50).optional().nullable(),
   school: z.string().max(200).optional().nullable(),
   agency: z.string().max(200).optional().nullable(),
   email: z.string().email().optional().nullable(),

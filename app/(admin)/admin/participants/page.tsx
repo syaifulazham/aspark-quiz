@@ -44,6 +44,9 @@ export default async function ParticipantsPage() {
                 Name
               </th>
               <th className="px-4 py-3 text-left font-medium text-[var(--muted-foreground)]">
+                Grade
+              </th>
+              <th className="px-4 py-3 text-left font-medium text-[var(--muted-foreground)]">
                 School
               </th>
               <th className="px-4 py-3 text-left font-medium text-[var(--muted-foreground)]">
@@ -63,6 +66,9 @@ export default async function ParticipantsPage() {
                   </td>
                   <td className="px-4 py-3">{p.full_name}</td>
                   <td className="px-4 py-3 text-[var(--muted-foreground)]">
+                    {p.grade || "—"}
+                  </td>
+                  <td className="px-4 py-3 text-[var(--muted-foreground)]">
                     {p.school || "—"}
                   </td>
                   <td className="px-4 py-3 text-[var(--muted-foreground)]">
@@ -76,7 +82,7 @@ export default async function ParticipantsPage() {
             ) : (
               <tr>
                 <td
-                  colSpan={5}
+                  colSpan={6}
                   className="px-4 py-12 text-center text-[var(--muted-foreground)]"
                 >
                   No participants yet. They will appear here once registered via
