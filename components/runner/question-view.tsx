@@ -145,7 +145,21 @@ function OptionList({
                showCorrect && isSelected && !isCorrect ? <X className="h-3.5 w-3.5" /> : 
                letter}
             </span>
-            <span className="flex-1"><KaTeXRenderer text={option.label?.text || `Option ${letter}`} /></span>
+            <span className="flex-1 space-y-2">
+              {option.media_key && (
+                <img
+                  src={`https://${process.env.NEXT_PUBLIC_R2_PUBLIC_HOST}/${option.media_key}`}
+                  alt={option.media_alt || `Option ${letter}`}
+                  className="max-h-40 rounded-md border border-border object-contain"
+                />
+              )}
+              {option.label?.text && (
+                <span className="block"><KaTeXRenderer text={option.label.text} /></span>
+              )}
+              {!option.media_key && !option.label?.text && (
+                <span className="block">{`Option ${letter}`}</span>
+              )}
+            </span>
           </button>
         );
       })}

@@ -20,6 +20,8 @@ export interface RunnerOption {
   label: { text?: string };
   is_correct: boolean;
   position: number;
+  media_key: string | null;
+  media_alt: string | null;
 }
 
 export interface RunnerAnswer {

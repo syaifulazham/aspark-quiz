@@ -49,6 +49,8 @@ interface OptionRow {
   label: Record<string, unknown>;
   is_correct: boolean;
   position: number;
+  media_key: string | null;
+  media_alt: string | null;
 }
 
 export default async function QuizEditPage({ params }: Props) {
@@ -102,7 +104,7 @@ export default async function QuizEditPage({ params }: Props) {
   // Fetch questions for this version
   const { data: questions } = await supabase
     .from("questions")
-    .select("id, kind, content_kind, stem, points, time_seconds, numeric_answer, numeric_tolerance, numeric_unit, explanation, media_key, media_alt, position, question_options(id, label, is_correct, position)")
+    .select("id, kind, content_kind, stem, points, time_seconds, numeric_answer, numeric_tolerance, numeric_unit, explanation, media_key, media_alt, position, question_options(id, label, is_correct, position, media_key, media_alt)")
     .eq("quiz_version_id", draftVersion.id)
     .order("position", { ascending: true });
 

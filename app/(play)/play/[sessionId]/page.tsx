@@ -18,7 +18,7 @@ interface QuestionData {
   media_key: string | null;
   media_alt: string | null;
   numeric_unit: string | null;
-  options: Array<{ id: string; label: string; position: number }>;
+  options: Array<{ id: string; label: string; position: number; media_key: string | null; media_alt: string | null }>;
 }
 
 interface SessionInfo {
@@ -341,7 +341,16 @@ export default function QuizRunnerPage() {
                     )}>
                       {String.fromCharCode(65 + idx)}
                     </span>
-                    <span>{opt.label}</span>
+                    <span className="flex-1 space-y-2">
+                      {opt.media_key && (
+                        <img
+                          src={`https://${process.env.NEXT_PUBLIC_R2_PUBLIC_HOST}/${opt.media_key}`}
+                          alt={opt.media_alt || ""}
+                          className="max-h-40 rounded-md border border-border object-contain"
+                        />
+                      )}
+                      {opt.label && <span className="block">{opt.label}</span>}
+                    </span>
                   </button>
                 );
               })}

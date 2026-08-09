@@ -68,6 +68,7 @@ export type Database = {
           slug: string;
           title: string;
           description: string | null;
+          grades: number[];
           cover_key: string | null;
           created_by: string | null;
           created_at: string;
@@ -78,6 +79,7 @@ export type Database = {
           slug: string;
           title: string;
           description?: string | null;
+          grades?: number[];
           cover_key?: string | null;
           created_by?: string | null;
           created_at?: string;
@@ -88,6 +90,7 @@ export type Database = {
           slug?: string;
           title?: string;
           description?: string | null;
+          grades?: number[];
           cover_key?: string | null;
           created_by?: string | null;
           created_at?: string;
@@ -332,6 +335,7 @@ export type Database = {
           org_id: string;
           participant_id: string;
           quiz_version_id: string;
+          competition_session_id: string | null;
           api_key_id: string | null;
           token_hash: string;
           token_prefix: string;
@@ -349,6 +353,7 @@ export type Database = {
           org_id: string;
           participant_id: string;
           quiz_version_id: string;
+          competition_session_id?: string | null;
           api_key_id?: string | null;
           token_hash: string;
           token_prefix: string;
@@ -366,6 +371,7 @@ export type Database = {
           org_id?: string;
           participant_id?: string;
           quiz_version_id?: string;
+          competition_session_id?: string | null;
           api_key_id?: string | null;
           token_hash?: string;
           token_prefix?: string;

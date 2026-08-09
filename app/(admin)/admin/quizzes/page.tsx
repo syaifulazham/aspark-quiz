@@ -5,18 +5,21 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { QuizGrades } from "./quiz-grades";
 
 interface QuizRow {
   id: string;
   title: string;
   slug: string;
   description: string | null;
+  grades: number[];
   created_at: string;
   quiz_versions: Array<{
     id: string;
     version: number;
     status: string;
     published_at: string | null;
+    questions: Array<{ count: number }>;
   }>;
 }
 
@@ -24,7 +27,9 @@ export default async function QuizzesPage() {
   const supabase = await createServerSupabaseClient();
   const { data } = await supabase
     .from("quizzes")
-    .select("*, quiz_versions(id, version, status, published_at)")
+    .select(
+      "*, quiz_versions(id, version, status, published_at, questions(count))"
+    )
     .order("created_at", { ascending: false });
 
   const quizzes = (data ?? []) as unknown as QuizRow[];
@@ -52,8 +57,10 @@ export default async function QuizzesPage() {
               version: number;
               status: string;
               published_at: string | null;
+              questions: Array<{ count: number }>;
             }>;
             const latestVersion = versions[0];
+            const questionCount = latestVersion?.questions?.[0]?.count ?? 0;
             return (
               <Card key={quiz.id}>
                 <CardContent className="flex items-center justify-between py-4">
@@ -67,16 +74,23 @@ export default async function QuizzesPage() {
                           <Badge variant={latestVersion.status === "published" ? "default" : "secondary"}>
                             v{latestVersion.version} {latestVersion.status}
                           </Badge>
+                          <span>·</span>
+                          <span>
+                            {questionCount} question{questionCount === 1 ? "" : "s"}
+                          </span>
                         </>
                       )}
                     </p>
                   </div>
-                  <Link
-                    href={`/admin/quizzes/${quiz.id}/edit`}
-                    className={buttonVariants({ variant: "outline", size: "sm" })}
-                  >
-                    Edit
-                  </Link>
+                  <div className="flex items-center gap-2">
+                    <QuizGrades quizId={quiz.id} grades={quiz.grades ?? []} />
+                    <Link
+                      href={`/admin/quizzes/${quiz.id}/edit`}
+                      className={buttonVariants({ variant: "outline", size: "sm" })}
+                    >
+                      Edit
+                    </Link>
+                  </div>
                 </CardContent>
               </Card>
             );

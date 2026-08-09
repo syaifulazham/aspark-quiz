@@ -109,6 +109,29 @@ export async function updateQuiz(quizId: string, formData: FormData) {
   return { success: true };
 }
 
+export async function updateQuizGrades(quizId: string, grades: number[]) {
+  const supabase = await createServerSupabaseClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) throw new Error("Unauthorized");
+
+  const cleaned = [...new Set(grades)]
+    .filter((g) => Number.isInteger(g) && g >= 1 && g <= 12)
+    .sort((a, b) => a - b);
+
+  const { error } = await supabase
+    .from("quizzes")
+    .update({ grades: cleaned } as never)
+    .eq("id", quizId);
+
+  if (error) return { error: error.message };
+
+  revalidatePath("/admin/quizzes");
+  return { success: true };
+}
+
 export async function deleteQuiz(quizId: string) {
   const supabase = await createServerSupabaseClient();
   const {

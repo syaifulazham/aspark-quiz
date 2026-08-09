@@ -207,7 +207,7 @@ export async function addOption(quizId: string, payload: OptionPayload) {
 export async function updateOption(
   quizId: string,
   optionId: string,
-  payload: Partial<{ label: Record<string, unknown>; is_correct: boolean; position: number }>
+  payload: Partial<{ label: Record<string, unknown>; is_correct: boolean; position: number; media_key: string | null; media_alt: string | null }>
 ) {
   const supabase = await createServerSupabaseClient();
   const {

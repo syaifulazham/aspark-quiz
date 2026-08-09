@@ -125,6 +125,8 @@ export async function GET(
           id: o.id,
           label: o.label_html || o.label?.text || "",
           position: o.position,
+          media_key: o.media_key,
+          media_alt: o.media_alt,
         })),
     },
     current_answer: answer

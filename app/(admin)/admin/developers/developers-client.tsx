@@ -226,15 +226,18 @@ POST /api/v1/sessions/tokens      (scope: tokens:write)
 
 Body:
 {
-  "participant_id": "uuid",           // OR "personal_id": "STU001"
-  "quiz_id": "uuid",                  // required
-  "quiz_version": "latest_published", // or a version number
-  "expires_in": 86400,                // seconds until expiry
-  "mode": "solo",                     // "solo" | "live"
-  "not_before": null                  // optional ISO timestamp
+  "participant_id": "uuid",              // OR "personal_id": "STU001"
+  "quiz_id": "uuid",                     // required
+  "quiz_version": "latest_published",    // or a version number
+  "competition_session_id": "uuid",      // optional but recommended: binds the token to participant + session + quiz set. The quiz version must belong to this session (422 otherwise).
+  "expires_in": 86400,                   // seconds until expiry
+  "mode": "solo",                        // "solo" | "live"
+  "not_before": null                     // optional ISO timestamp
 }
 
-Success: 201 with { "token", "token_id", "participant", "quiz", "mode", "start_url", "expires_at", "single_use": true }.
+Each token is specific to ONE participant + ONE session + ONE quiz — e.g. Jamil / "Asia Spark Test 1" / "Mathematics for Grade 7" = 1 token. Pass competition_session_id (from endpoint #2) together with the quiz_id (from endpoint #3) so the binding is validated and recorded.
+
+Success: 201 with { "token", "token_id", "participant", "quiz", "mode", "competition_session_id", "start_url", "expires_at", "single_use": true }.
 The "start_url" is a ready-to-open link that logs the participant straight into the quiz. Tokens are single-use — once redeemed they cannot be reused.
 
 ## Typical flow

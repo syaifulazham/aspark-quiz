@@ -58,7 +58,7 @@ export default async function SharedPreviewPage({ params }: Props) {
   // Fetch questions
   const { data: rawQuestions } = await supabase
     .from("questions")
-    .select("id, kind, content_kind, stem, points, time_seconds, numeric_answer, numeric_tolerance, numeric_unit, explanation, media_key, media_alt, position, question_options(id, label, is_correct, position)")
+    .select("id, kind, content_kind, stem, points, time_seconds, numeric_answer, numeric_tolerance, numeric_unit, explanation, media_key, media_alt, position, question_options(id, label, is_correct, position, media_key, media_alt)")
     .eq("quiz_version_id", v.id)
     .order("position", { ascending: true });
 
@@ -81,6 +81,8 @@ export default async function SharedPreviewPage({ params }: Props) {
       label: { text?: string };
       is_correct: boolean;
       position: number;
+      media_key: string | null;
+      media_alt: string | null;
     }>;
   }>).map((q) => ({
     ...q,

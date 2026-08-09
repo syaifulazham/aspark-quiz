@@ -108,6 +108,37 @@ export async function POST(request: NextRequest) {
     quizVersionId = (version as unknown as { id: string }).id;
   }
 
+  // If a competition session is specified, the quiz version must belong to it
+  if (input.competition_session_id) {
+    const { data: compSession } = await supabase
+      .from("competition_sessions")
+      .select("id, title")
+      .eq("id", input.competition_session_id)
+      .eq("org_id", ctx.orgId)
+      .single();
+
+    if (!compSession) {
+      return NextResponse.json(
+        { type: "https://docs.quizzly.app/errors/not_found", title: "Session not found", status: 404, detail: "No competition session with this id in this organisation." },
+        { status: 404 }
+      );
+    }
+
+    const { data: quizSet } = await supabase
+      .from("session_quiz_sets")
+      .select("id")
+      .eq("competition_session_id", input.competition_session_id)
+      .eq("quiz_version_id", quizVersionId)
+      .maybeSingle();
+
+    if (!quizSet) {
+      return NextResponse.json(
+        { type: "https://docs.quizzly.app/errors/unprocessable", title: "Quiz not in session", status: 422, detail: "The resolved quiz version is not part of this competition session." },
+        { status: 422 }
+      );
+    }
+  }
+
   // Check quiz_ids scope
   if (ctx.quizIds && !ctx.quizIds.includes(input.quiz_id)) {
     return NextResponse.json(
@@ -135,6 +166,7 @@ export async function POST(request: NextRequest) {
       live_room_id: input.live_room_id || null,
       expires_at: expiresAt,
       not_before: input.not_before || null,
+      competition_session_id: input.competition_session_id || null,
     } as never)
     .select("id")
     .single();
@@ -181,6 +213,7 @@ export async function POST(request: NextRequest) {
         time_limit_seconds: (quizVersion as unknown as Record<string, unknown>)?.time_limit_seconds,
       },
       mode: input.mode,
+      competition_session_id: input.competition_session_id || null,
       start_url: `${baseUrl}/play?pid=${encodeURIComponent((participant as unknown as { personal_id: string })?.personal_id || "")}&token=${rawToken}`,
       expires_at: expiresAt,
       not_before: input.not_before || null,

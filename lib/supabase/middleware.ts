@@ -39,6 +39,11 @@ export async function updateSession(request: NextRequest) {
     request.nextUrl.pathname.startsWith("/admin") &&
     !request.nextUrl.pathname.startsWith("/admin/login")
   ) {
+    // Server actions (POSTs) must not be redirected — return 401 so the
+    // client receives a proper response instead of an HTML login page.
+    if (request.method !== "GET" && request.method !== "HEAD") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
     const url = request.nextUrl.clone();
     url.pathname = "/admin/login";
     return NextResponse.redirect(url);

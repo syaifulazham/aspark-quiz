@@ -7,6 +7,7 @@ export const issueTokenSchema = z.object({
   quiz_version: z
     .union([z.literal("latest_published"), z.number().int().positive()])
     .default("latest_published"),
+  competition_session_id: z.string().uuid().optional().nullable(),
   mode: z.enum(["solo", "live"]).default("solo"),
   live_room_id: z.string().uuid().optional().nullable(),
   expires_in: z.number().int().min(60).max(2592000).default(86400),

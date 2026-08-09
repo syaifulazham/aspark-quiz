@@ -22,9 +22,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Plus, GripVertical, Trash2, Check, ImagePlus, X, Eye, Code } from "lucide-react";
+import { Plus, GripVertical, Trash2, Check, ImagePlus, X, Eye, Code, Sigma } from "lucide-react";
 import { addQuestion, updateQuestion, deleteQuestion, addOption, updateOption, deleteOption } from "@/lib/actions/question";
 import { KaTeXRenderer } from "@/components/katex-renderer";
+import { MathEditor } from "@/components/math-editor";
+import { cn } from "@/lib/utils";
 import { AIGenerateModal } from "./ai-generate-modal";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -54,6 +56,8 @@ interface OptionData {
   label: Record<string, unknown>;
   is_correct: boolean;
   position: number;
+  media_key: string | null;
+  media_alt: string | null;
 }
 
 interface QuestionData {
@@ -92,7 +96,46 @@ export function QuizEditor({ quiz, version, questions: initialQuestions }: Props
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [optionImageTarget, setOptionImageTarget] = useState<{ optionId: string; letter: string } | null>(null);
+  const [optionImageDragOver, setOptionImageDragOver] = useState(false);
+  const optionImageInputRef = useRef<HTMLInputElement>(null);
+  const [mathTarget, setMathTarget] = useState<{ type: "stem" } | { type: "option"; optionId: string } | null>(null);
+  const stemRef = useRef<HTMLTextAreaElement>(null);
+  const optionInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const mathSelectionRef = useRef<{ start: number; end: number } | null>(null);
   const saveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  function openMathEditor(target: NonNullable<typeof mathTarget>) {
+    // Capture cursor position before the click steals focus
+    const el = target.type === "stem" ? stemRef.current : optionInputRefs.current[target.optionId];
+    mathSelectionRef.current = el
+      ? { start: el.selectionStart ?? el.value.length, end: el.selectionEnd ?? el.value.length }
+      : null;
+    setMathTarget(target);
+  }
+
+  function handleMathApply(latex: string) {
+    if (!mathTarget || !currentQuestion) return;
+    const insert = `$${latex}$`;
+
+    if (mathTarget.type === "stem") {
+      const text = (currentQuestion.stem as { text?: string })?.text || "";
+      const sel = mathSelectionRef.current;
+      const next = sel
+        ? text.slice(0, sel.start) + insert + text.slice(sel.end)
+        : text + (text ? " " : "") + insert;
+      handleStemChange(next);
+    } else {
+      const opt = currentQuestion.question_options.find((o) => o.id === mathTarget.optionId);
+      if (!opt) return;
+      const text = (opt.label as { text?: string })?.text || "";
+      const sel = mathSelectionRef.current;
+      const next = sel
+        ? text.slice(0, sel.start) + insert + text.slice(sel.end)
+        : text + (text ? " " : "") + insert;
+      handleOptionLabelChange(mathTarget.optionId, next);
+    }
+  }
 
   function debouncedSave(key: string, fn: () => Promise<unknown>, delay = 600) {
     clearTimeout(saveTimers.current[key]);
@@ -126,7 +169,7 @@ export function QuizEditor({ quiz, version, questions: initialQuestions }: Props
 
         if (result.id) {
           // Add options
-          const savedOptions: Array<{ id: string; label: Record<string, unknown>; is_correct: boolean; position: number }> = [];
+          const savedOptions: Array<{ id: string; label: Record<string, unknown>; is_correct: boolean; position: number; media_key: string | null; media_alt: string | null }> = [];
           for (const opt of gq.options) {
             const optResult = await addOption(quiz.id, {
               question_id: result.id,
@@ -140,6 +183,8 @@ export function QuizEditor({ quiz, version, questions: initialQuestions }: Props
                 label: { text: opt.label },
                 is_correct: opt.is_correct,
                 position: opt.position,
+                media_key: null,
+                media_alt: null,
               });
             }
           }
@@ -195,8 +240,8 @@ export function QuizEditor({ quiz, version, questions: initialQuestions }: Props
           position: questions.length + 1,
           question_options: kind === "true_false" 
             ? [
-                { id: "tf-true", label: { text: "True" }, is_correct: true, position: 1 },
-                { id: "tf-false", label: { text: "False" }, is_correct: false, position: 2 },
+                { id: "tf-true", label: { text: "True" }, is_correct: true, position: 1, media_key: null, media_alt: null },
+                { id: "tf-false", label: { text: "False" }, is_correct: false, position: 2, media_key: null, media_alt: null },
               ]
             : [],
         };
@@ -255,6 +300,8 @@ export function QuizEditor({ quiz, version, questions: initialQuestions }: Props
       label: { text: "" },
       is_correct: false,
       position,
+      media_key: null,
+      media_alt: null,
     };
     setQuestions((qs) =>
       qs.map((q) =>
@@ -358,31 +405,22 @@ export function QuizEditor({ quiz, version, questions: initialQuestions }: Props
     if (!currentQuestion) return;
     setUploading(true);
     try {
-      // 1. Get presigned URL
-      const signRes = await fetch("/api/internal/uploads/sign", {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("quizId", quiz.id);
+      formData.append("questionId", currentQuestion.id);
+      const uploadRes = await fetch("/api/internal/uploads", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contentType: file.type,
-          size: file.size,
-          scope: { quizId: quiz.id, questionId: currentQuestion.id },
-        }),
+        body: formData,
       });
-      if (!signRes.ok) {
-        const err = await signRes.json();
-        toast.error(err.error || "Failed to get upload URL");
+      if (!uploadRes.ok) {
+        const err = await uploadRes.json();
+        toast.error(err.error || "Upload failed");
         return;
       }
-      const { uploadUrl, key } = await signRes.json();
+      const { key } = await uploadRes.json();
 
-      // 2. Upload to R2
-      await fetch(uploadUrl, {
-        method: "PUT",
-        headers: { "Content-Type": file.type },
-        body: file,
-      });
-
-      // 3. Save media_key to question
+      // Save media_key to question
       const updated = { ...currentQuestion, media_key: key, media_alt: file.name };
       setQuestions(questions.map((q, i) => (i === selectedIndex ? updated : q)));
 
@@ -411,7 +449,7 @@ export function QuizEditor({ quiz, version, questions: initialQuestions }: Props
 
   useEffect(() => {
     function onPaste(e: ClipboardEvent) {
-      if (!currentQuestion) return;
+      if (!currentQuestion || optionImageTarget) return;
       const items = e.clipboardData?.items
         ? Array.from(e.clipboardData.items)
         : [];
@@ -432,7 +470,7 @@ export function QuizEditor({ quiz, version, questions: initialQuestions }: Props
     }
     document.addEventListener("paste", onPaste);
     return () => document.removeEventListener("paste", onPaste);
-  }, [currentQuestion, handleImageUpload]);
+  }, [currentQuestion, handleImageUpload, optionImageTarget]);
 
   function handleRemoveImage() {
     if (!currentQuestion) return;
@@ -441,6 +479,61 @@ export function QuizEditor({ quiz, version, questions: initialQuestions }: Props
 
     startTransition(async () => {
       await updateQuestion(quiz.id, currentQuestion.id, { media_key: null, media_alt: null });
+    });
+    toast.success("Image removed");
+  }
+
+  async function handleOptionImageUpload(optionId: string, file: File) {
+    if (!currentQuestion || optionId.startsWith("temp-")) {
+      if (optionId.startsWith("temp-")) toast.error("Save the option text first, then add an image");
+      return;
+    }
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("quizId", quiz.id);
+      formData.append("questionId", currentQuestion.id);
+      const uploadRes = await fetch("/api/internal/uploads", {
+        method: "POST",
+        body: formData,
+      });
+      if (!uploadRes.ok) {
+        const err = await uploadRes.json();
+        toast.error(err.error || "Upload failed");
+        return;
+      }
+      const { key } = await uploadRes.json();
+
+      const updatedOptions = currentQuestion.question_options.map((o) =>
+        o.id === optionId ? { ...o, media_key: key, media_alt: file.name } : o
+      );
+      const updated = { ...currentQuestion, question_options: updatedOptions };
+      setQuestions(questions.map((q, i) => (i === selectedIndex ? updated : q)));
+
+      startTransition(async () => {
+        await updateOption(quiz.id, optionId, { media_key: key, media_alt: file.name });
+      });
+
+      toast.success("Image uploaded");
+      setOptionImageTarget(null);
+    } catch {
+      toast.error("Image upload failed");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function handleOptionImageRemove(optionId: string) {
+    if (!currentQuestion) return;
+    const updatedOptions = currentQuestion.question_options.map((o) =>
+      o.id === optionId ? { ...o, media_key: null, media_alt: null } : o
+    );
+    const updated = { ...currentQuestion, question_options: updatedOptions };
+    setQuestions(questions.map((q, i) => (i === selectedIndex ? updated : q)));
+
+    startTransition(async () => {
+      await updateOption(quiz.id, optionId, { media_key: null, media_alt: null });
     });
     toast.success("Image removed");
   }
@@ -571,6 +664,15 @@ export function QuizEditor({ quiz, version, questions: initialQuestions }: Props
                       variant="ghost"
                       size="sm"
                       className="h-6 px-2"
+                      onClick={() => openMathEditor({ type: "stem" })}
+                      title="Math editor"
+                    >
+                      <Sigma className="h-3 w-3" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2"
                       onClick={() => setPreviewStem(!previewStem)}
                       title={previewStem ? "Edit" : "Preview"}
                     >
@@ -584,6 +686,7 @@ export function QuizEditor({ quiz, version, questions: initialQuestions }: Props
                   </div>
                 ) : (
                   <textarea
+                    ref={stemRef}
                     id="stem"
                     className="min-h-[120px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     value={(currentQuestion.stem as { text?: string })?.text || ""}
@@ -705,17 +808,54 @@ export function QuizEditor({ quiz, version, questions: initialQuestions }: Props
                         </span>
                         <div className="flex-1 flex items-center gap-1">
                           {previewOptions[opt.id] ? (
-                            <div className="flex-1 rounded-md border border-input bg-background px-3 py-1.5 text-sm min-h-[36px] flex items-center">
+                            <div className="flex-1 rounded-md border border-input bg-background px-3 py-1.5 text-sm min-h-[36px] flex items-center gap-2">
+                              {opt.media_key && (
+                                <img
+                                  src={`https://${process.env.NEXT_PUBLIC_R2_PUBLIC_HOST}/${opt.media_key}`}
+                                  alt={opt.media_alt || ""}
+                                  className="h-7 w-7 shrink-0 rounded object-contain"
+                                />
+                              )}
                               <KaTeXRenderer text={(opt.label as { text?: string })?.text || ""} />
                             </div>
                           ) : (
-                            <Input
-                              value={(opt.label as { text?: string })?.text || ""}
-                              onChange={(e) => handleOptionLabelChange(opt.id, e.target.value)}
-                              placeholder={`Option ${String.fromCharCode(65 + optIdx)} — use $...$ for math`}
-                              className="flex-1"
-                            />
+                            <div className="relative flex flex-1 items-center rounded-md border border-input bg-background focus-within:ring-2 focus-within:ring-ring">
+                              {opt.media_key && (
+                                <span className="relative ml-1.5 shrink-0">
+                                  <img
+                                    src={`https://${process.env.NEXT_PUBLIC_R2_PUBLIC_HOST}/${opt.media_key}`}
+                                    alt={opt.media_alt || ""}
+                                    className="h-7 w-7 rounded object-contain"
+                                  />
+                                  <button
+                                    onClick={() => handleOptionImageRemove(opt.id)}
+                                    className="absolute -right-1.5 -top-1.5 rounded-full border border-border bg-background p-px shadow-sm hover:bg-destructive hover:text-destructive-foreground transition"
+                                    title="Remove image"
+                                  >
+                                    <X className="h-2.5 w-2.5" />
+                                  </button>
+                                </span>
+                              )}
+                              <Input
+                                ref={(el) => {
+                                  optionInputRefs.current[opt.id] = el;
+                                }}
+                                value={(opt.label as { text?: string })?.text || ""}
+                                onChange={(e) => handleOptionLabelChange(opt.id, e.target.value)}
+                                placeholder={`Option ${String.fromCharCode(65 + optIdx)} — use $...$ for math (optional if image)`}
+                                className="flex-1 border-0 bg-transparent shadow-none focus-visible:ring-0"
+                              />
+                            </div>
                           )}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0 shrink-0"
+                            onClick={() => openMathEditor({ type: "option", optionId: opt.id })}
+                            title="Math editor"
+                          >
+                            <Sigma className="h-3 w-3 text-muted-foreground" />
+                          </Button>
                           <Button
                             variant="ghost"
                             size="sm"
@@ -724,6 +864,15 @@ export function QuizEditor({ quiz, version, questions: initialQuestions }: Props
                             title={previewOptions[opt.id] ? "Edit" : "Preview"}
                           >
                             {previewOptions[opt.id] ? <Code className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0 shrink-0"
+                            onClick={() => setOptionImageTarget({ optionId: opt.id, letter: String.fromCharCode(65 + optIdx) })}
+                            title={opt.media_key ? "Replace image" : "Add image"}
+                          >
+                            <ImagePlus className={cn("h-3 w-3", opt.media_key ? "text-primary" : "text-muted-foreground")} />
                           </Button>
                         </div>
                         {(currentQuestion.kind === "mcq_single" || currentQuestion.kind === "mcq_multi") && (
@@ -906,6 +1055,121 @@ export function QuizEditor({ quiz, version, questions: initialQuestions }: Props
           )}
         </div>
       </div>
+
+      {/* Math editor dialog */}
+      <MathEditor
+        open={mathTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setMathTarget(null);
+        }}
+        title={mathTarget?.type === "stem" ? "Math — question stem" : "Math — option"}
+        onApply={handleMathApply}
+      />
+
+      {/* Option image upload dialog */}
+      <Dialog
+        open={optionImageTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setOptionImageTarget(null);
+            setOptionImageDragOver(false);
+          }
+        }}
+      >
+        <DialogContent
+          onPaste={(e) => {
+            if (!optionImageTarget) return;
+            const items = e.clipboardData?.items ? Array.from(e.clipboardData.items) : [];
+            let file =
+              items
+                .find((item) => item.kind === "file" && item.type.startsWith("image/"))
+                ?.getAsFile() ?? null;
+            if (!file && e.clipboardData?.files) {
+              file = Array.from(e.clipboardData.files).find((f) => f.type.startsWith("image/")) ?? null;
+            }
+            if (file) {
+              e.preventDefault();
+              handleOptionImageUpload(optionImageTarget.optionId, file);
+            }
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full border border-muted-foreground/30 text-xs font-medium">
+                {optionImageTarget?.letter}
+              </span>
+              Option image
+            </DialogTitle>
+            {(() => {
+              const opt = currentQuestion?.question_options.find((o) => o.id === optionImageTarget?.optionId);
+              const text = (opt?.label as { text?: string })?.text;
+              return text ? (
+                <DialogDescription className="line-clamp-2">{text}</DialogDescription>
+              ) : (
+                <DialogDescription>Upload an image for this option.</DialogDescription>
+              );
+            })()}
+          </DialogHeader>
+          {(() => {
+            const opt = currentQuestion?.question_options.find((o) => o.id === optionImageTarget?.optionId);
+            return opt?.media_key ? (
+              <div className="flex justify-center rounded-lg border border-border bg-muted/30 p-4">
+                <img
+                  src={`https://${process.env.NEXT_PUBLIC_R2_PUBLIC_HOST}/${opt.media_key}`}
+                  alt={opt.media_alt || ""}
+                  className="max-h-48 object-contain"
+                />
+              </div>
+            ) : null;
+          })()}
+          <input
+            ref={optionImageInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file && optionImageTarget) handleOptionImageUpload(optionImageTarget.optionId, file);
+              e.target.value = "";
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => optionImageInputRef.current?.click()}
+            disabled={uploading}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setOptionImageDragOver(true);
+            }}
+            onDragLeave={() => setOptionImageDragOver(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setOptionImageDragOver(false);
+              const file = Array.from(e.dataTransfer.files).find((f) => f.type.startsWith("image/"));
+              if (file && optionImageTarget) {
+                handleOptionImageUpload(optionImageTarget.optionId, file);
+              } else if (e.dataTransfer.files.length > 0) {
+                toast.error("Only image files are supported");
+              }
+            }}
+            className={`flex w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-8 text-sm transition ${
+              optionImageDragOver
+                ? "border-primary bg-primary/10 text-primary"
+                : "border-muted-foreground/25 text-muted-foreground hover:border-primary/50 hover:bg-primary/5 hover:text-foreground"
+            }`}
+          >
+            <ImagePlus className="h-6 w-6" />
+            <span className="font-medium">
+              {uploading ? "Uploading..." : optionImageDragOver ? "Drop image here" : "Add image"}
+            </span>
+            {!uploading && !optionImageDragOver && (
+              <span className="text-xs text-muted-foreground">
+                Drag &amp; drop, paste from clipboard, or click to browse
+              </span>
+            )}
+          </button>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
