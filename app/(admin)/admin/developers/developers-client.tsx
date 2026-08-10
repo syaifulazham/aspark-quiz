@@ -84,6 +84,12 @@ const API_REFERENCE: Array<{ method: string; path: string; scope: string; descri
     scope: "tokens:write",
     description: "Create a one-time login token for a participant",
   },
+  {
+    method: "GET",
+    path: "/api/v1/sessions/tokens/{id}",
+    scope: "tokens:read",
+    description: "Get token status (active / redeemed / expired / revoked)",
+  },
 ];
 
 export function DevelopersClient({ keys, canManage, origin }: Props) {
@@ -97,6 +103,7 @@ export function DevelopersClient({ keys, canManage, origin }: Props) {
   const [scopes, setScopes] = useState<string[]>([
     "participants:write",
     "tokens:write",
+    "tokens:read",
     "results:read",
   ]);
   const [expiresAt, setExpiresAt] = useState("");
@@ -119,7 +126,7 @@ export function DevelopersClient({ keys, canManage, origin }: Props) {
   function resetCreateForm() {
     setName("");
     setEnvironment("live");
-    setScopes(["participants:write", "tokens:write", "results:read"]);
+    setScopes(["participants:write", "tokens:write", "tokens:read", "results:read"]);
     setExpiresAt("");
     setCreatedKey(null);
     setCopied(false);
@@ -252,13 +259,21 @@ Body:
 Each token is specific to ONE participant + ONE session + ONE quiz — e.g. Jamil / "Asia Spark Test 1" / "Mathematics for Grade 7" = 1 token. Pass competition_session_id (from endpoint #2) together with the quiz_id (from endpoint #3) so the binding is validated and recorded.
 
 Success: 201 with { "token", "token_id", "participant", "quiz", "mode", "competition_session_id", "start_url", "expires_at", "single_use": true }.
-The "start_url" is a ready-to-open link that logs the participant straight into the quiz. Tokens are single-use — once redeemed they cannot be reused.
+The "token" is a 6-digit numeric code. The "start_url" is a ready-to-open link with the code prefilled that logs the participant straight into the quiz. Tokens are single-use — once redeemed they cannot be reused.
+
+### 5. Get token status
+GET /api/v1/sessions/tokens/{tokenId}   (scope: tokens:read, or tokens:write)
+
+Returns { "token_id", "token_prefix", "status", "mode", "participant", "quiz", "competition_session_id", "not_before", "expires_at", "redeemed_at", "revoked_at", "created_at", "session" }.
+"status" is one of: active, not_yet_valid, redeemed, expired, revoked. "session" is null until the token is redeemed; afterwards it contains { "session_id", "state", "started_at", "deadline_at", "submitted_at", "raw_score", "max_score", "percentage", "passed" }.
+404 if the token does not exist in the key's organisation.
 
 ## Typical flow
 1. POST /api/v1/participants to register each participant (use ?upsert=true for idempotent imports).
 2. GET /api/v1/competition-sessions to find the session id.
 3. GET /api/v1/competition-sessions/{id}/quizzes to find the quiz_id (and latest published version) in that session.
 4. POST /api/v1/sessions/tokens per participant+quiz, then distribute each "start_url" to the right participant.
+5. GET /api/v1/sessions/tokens/{tokenId} to poll redemption status and results.
 
 ## Guidelines
 - Never log or commit the API key.
