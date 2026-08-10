@@ -103,6 +103,9 @@ export function DevelopersClient({ keys, canManage, origin }: Props) {
   const [createdKey, setCreatedKey] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [promptCopied, setPromptCopied] = useState(false);
+  // Raw keys of keys created this session (never stored server-side)
+  const [recentKeys, setRecentKeys] = useState<Record<string, string>>({});
+  const [rowCopiedId, setRowCopiedId] = useState<string | null>(null);
 
   // Revoke dialog
   const [revokeTarget, setRevokeTarget] = useState<ApiKeyRow | null>(null);
@@ -136,6 +139,9 @@ export function DevelopersClient({ keys, canManage, origin }: Props) {
         toast.error(result.error);
       } else if (result.key) {
         setCreatedKey(result.key);
+        if (result.id) {
+          setRecentKeys((prev) => ({ ...prev, [result.id!]: result.key! }));
+        }
         router.refresh();
       }
     });
@@ -160,6 +166,14 @@ export function DevelopersClient({ keys, canManage, origin }: Props) {
     await navigator.clipboard.writeText(createdKey);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  }
+
+  async function copyRowKey(keyId: string) {
+    const raw = recentKeys[keyId];
+    if (!raw) return;
+    await navigator.clipboard.writeText(raw);
+    setRowCopiedId(keyId);
+    setTimeout(() => setRowCopiedId(null), 2000);
   }
 
   function keyStatus(k: ApiKeyRow) {
@@ -348,16 +362,32 @@ The "start_url" is a ready-to-open link that logs the participant straight into 
                     <TableCell>{keyStatus(k)}</TableCell>
                     {canManage && (
                       <TableCell>
-                        {!k.revoked_at && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setRevokeTarget(k)}
-                            title="Revoke key"
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                        )}
+                        <div className="flex items-center gap-1">
+                          {recentKeys[k.id] && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => copyRowKey(k.id)}
+                              title="Copy key (available until page refresh)"
+                            >
+                              {rowCopiedId === k.id ? (
+                                <Check className="h-4 w-4 text-green-600" />
+                              ) : (
+                                <Copy className="h-4 w-4" />
+                              )}
+                            </Button>
+                          )}
+                          {!k.revoked_at && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setRevokeTarget(k)}
+                              title="Revoke key"
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          )}
+                        </div>
                       </TableCell>
                     )}
                   </TableRow>
