@@ -28,11 +28,11 @@ export async function POST(
   // Get session
   const { data: session } = await supabase
     .from("quiz_sessions")
-    .select("id, state, quiz_version_id, question_order")
+    .select("id, state, quiz_version_id, question_order, token_id")
     .eq("id", id)
     .single();
 
-  const s = session as unknown as { id: string; state: string; quiz_version_id: string; question_order: string[] } | null;
+  const s = session as unknown as { id: string; state: string; quiz_version_id: string; question_order: string[]; token_id: string } | null;
   if (!s) {
     return NextResponse.json({ error: "Session not found" }, { status: 404 });
   }
@@ -48,7 +48,30 @@ export async function POST(
     .eq("id", s.quiz_version_id)
     .single();
 
-  const timeLimitSeconds = (version as unknown as { time_limit_seconds: number | null })?.time_limit_seconds;
+  let timeLimitSeconds = (version as unknown as { time_limit_seconds: number | null })?.time_limit_seconds;
+
+  // A per-quiz time limit configured on the competition session overrides the version default
+  const { data: tokenRow } = await supabase
+    .from("session_tokens")
+    .select("competition_session_id")
+    .eq("id", s.token_id)
+    .single();
+
+  const competitionSessionId = (tokenRow as unknown as { competition_session_id: string | null } | null)?.competition_session_id;
+
+  if (competitionSessionId) {
+    const { data: quizSet } = await supabase
+      .from("session_quiz_sets")
+      .select("time_limit_seconds")
+      .eq("competition_session_id", competitionSessionId)
+      .eq("quiz_version_id", s.quiz_version_id)
+      .maybeSingle();
+
+    const setLimit = (quizSet as unknown as { time_limit_seconds: number | null } | null)?.time_limit_seconds;
+    if (setLimit != null) {
+      timeLimitSeconds = setLimit;
+    }
+  }
 
   const now = new Date();
   const deadlineAt = timeLimitSeconds

@@ -107,6 +107,19 @@ export async function setSessionQuizSets(sessionId: string, quizSets: QuizSetPay
 
   const admin = createAdminClient();
 
+  // Capture existing time limits so they survive the delete/re-insert
+  const { data: existingSets } = await admin
+    .from("session_quiz_sets")
+    .select("quiz_version_id, time_limit_seconds")
+    .eq("competition_session_id", sessionId);
+
+  const timeLimitByVersion = new Map<string, number | null>(
+    ((existingSets ?? []) as unknown as Array<{
+      quiz_version_id: string;
+      time_limit_seconds: number | null;
+    }>).map((row) => [row.quiz_version_id, row.time_limit_seconds])
+  );
+
   // Delete existing quiz sets for this session
   await admin
     .from("session_quiz_sets")
@@ -124,11 +137,52 @@ export async function setSessionQuizSets(sessionId: string, quizSets: QuizSetPay
     quiz_version_id: qs.quiz_version_id,
     position: qs.position,
     label: qs.label || null,
+    time_limit_seconds: timeLimitByVersion.get(qs.quiz_version_id) ?? null,
   }));
 
   const { error } = await admin
     .from("session_quiz_sets")
     .insert(rows as never[]);
+
+  if (error) return { error: error.message };
+
+  revalidatePath("/admin/sessions");
+  return { success: true };
+}
+
+export async function updateQuizSetTimeLimit(
+  quizSetId: string,
+  timeLimitSeconds: number | null
+) {
+  const orgId = await getOrgId();
+  if (!orgId) return { error: "Unauthorized" };
+
+  if (timeLimitSeconds !== null && (!Number.isFinite(timeLimitSeconds) || timeLimitSeconds <= 0)) {
+    return { error: "Time limit must be a positive number of seconds" };
+  }
+
+  const admin = createAdminClient();
+
+  // Verify the quiz set belongs to this org
+  const { data: quizSet } = await admin
+    .from("session_quiz_sets")
+    .select("id, competition_session:competition_sessions!inner(org_id)")
+    .eq("id", quizSetId)
+    .single();
+
+  const qs = quizSet as unknown as {
+    id: string;
+    competition_session: { org_id: string };
+  } | null;
+
+  if (!qs || qs.competition_session.org_id !== orgId) {
+    return { error: "Quiz set not found" };
+  }
+
+  const { error } = await admin
+    .from("session_quiz_sets")
+    .update({ time_limit_seconds: timeLimitSeconds } as never)
+    .eq("id", quizSetId);
 
   if (error) return { error: error.message };
 

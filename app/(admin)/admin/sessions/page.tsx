@@ -1,5 +1,6 @@
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { SessionsClient } from "./sessions-client";
 
@@ -57,12 +58,19 @@ export default async function SessionsPage() {
     }
   }
 
+  const headerList = await headers();
+  const host =
+    headerList.get("x-forwarded-host") ?? headerList.get("host") ?? "localhost:3000";
+  const proto = headerList.get("x-forwarded-proto") ?? "http";
+  const origin = `${proto}://${host}`;
+
   return (
     <SessionsClient
       sessions={(sessions ?? []) as never[]}
       quizSets={quizSets as never[]}
       quizVersions={(quizVersions ?? []) as never[]}
       participantCounts={participantCounts}
+      origin={origin}
     />
   );
 }

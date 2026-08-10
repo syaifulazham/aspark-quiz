@@ -23,6 +23,14 @@ import {
 } from "@/components/ui/dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
   Plus,
   Trash2,
   Pencil,
@@ -30,6 +38,9 @@ import {
   Users,
   BookOpen,
   X,
+  Copy,
+  Check,
+  ExternalLink,
 } from "lucide-react";
 import {
   createCompetitionSession,
@@ -37,6 +48,7 @@ import {
   deleteCompetitionSession,
   setSessionQuizSets,
   toggleCompetitionSession,
+  updateQuizSetTimeLimit,
 } from "@/lib/actions/competition-session";
 import { toast } from "sonner";
 
@@ -62,6 +74,7 @@ interface QuizSetRow {
   quiz_version_id: string;
   position: number;
   label: string | null;
+  time_limit_seconds: number | null;
   quiz_version: {
     id: string;
     version: number;
@@ -81,6 +94,7 @@ interface Props {
   quizSets: QuizSetRow[];
   quizVersions: QuizVersionOption[];
   participantCounts: Record<string, number>;
+  origin: string;
 }
 
 const SESSION_TYPE_LABELS: Record<string, string> = {
@@ -102,6 +116,7 @@ export function SessionsClient({
   quizSets: initialQuizSets,
   quizVersions,
   participantCounts,
+  origin,
 }: Props) {
   const [sessions, setSessions] = useState(initialSessions);
   const [quizSets, setQuizSets] = useState(initialQuizSets);
@@ -123,6 +138,8 @@ export function SessionsClient({
   const [formQuizSets, setFormQuizSets] = useState<
     Array<{ quiz_version_id: string; label: string; position: number }>
   >([]);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [timeLimitDrafts, setTimeLimitDrafts] = useState<Record<string, string>>({});
 
   function resetForm() {
     setFormData({
@@ -287,7 +304,80 @@ export function SessionsClient({
   }
 
   function getSessionQuizSets(sessionId: string) {
-    return quizSets.filter((qs) => qs.competition_session_id === sessionId);
+    return quizSets
+      .filter((qs) => qs.competition_session_id === sessionId)
+      .sort((a, b) => a.position - b.position);
+  }
+
+  function getQuizEndpoint(sessionSlug: string, quizVersionId: string) {
+    return `${origin}/quiz/${sessionSlug}/${quizVersionId}`;
+  }
+
+  async function copyEndpoint(quizSetId: string, url: string) {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedId(quizSetId);
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch {
+      toast.error("Failed to copy");
+    }
+  }
+
+  function handleTimeLimitBlur(quizSetId: string, minutesStr: string) {
+    const qs = quizSets.find((q) => q.id === quizSetId);
+    const currentMinutes = qs?.time_limit_seconds != null ? qs.time_limit_seconds / 60 : null;
+    const trimmed = minutesStr.trim();
+    const newMinutes = trimmed === "" ? null : Number(trimmed);
+
+    if (newMinutes !== null && (!Number.isFinite(newMinutes) || newMinutes <= 0)) {
+      toast.error("Time limit must be a positive number of minutes");
+      setTimeLimitDrafts((prev) => {
+        const next = { ...prev };
+        delete next[quizSetId];
+        return next;
+      });
+      return;
+    }
+
+    if (newMinutes === currentMinutes) {
+      setTimeLimitDrafts((prev) => {
+        const next = { ...prev };
+        delete next[quizSetId];
+        return next;
+      });
+      return;
+    }
+
+    const seconds = newMinutes === null ? null : Math.round(newMinutes * 60);
+
+    // Optimistic update
+    setQuizSets((prev) =>
+      prev.map((q) =>
+        q.id === quizSetId ? { ...q, time_limit_seconds: seconds } : q
+      )
+    );
+    setTimeLimitDrafts((prev) => {
+      const next = { ...prev };
+      delete next[quizSetId];
+      return next;
+    });
+
+    startTransition(async () => {
+      const result = await updateQuizSetTimeLimit(quizSetId, seconds);
+      if (result.error) {
+        toast.error(result.error);
+        // Revert
+        setQuizSets((prev) =>
+          prev.map((q) =>
+            q.id === quizSetId
+              ? { ...q, time_limit_seconds: qs?.time_limit_seconds ?? null }
+              : q
+          )
+        );
+      } else {
+        toast.success("Time limit updated");
+      }
+    });
   }
 
   function getQuizVersionLabel(versionId: string) {
@@ -398,12 +488,100 @@ export function SessionsClient({
                     </span>
                   </div>
                   {sessionQS.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {sessionQS.map((qs) => (
-                        <Badge key={qs.id} variant="outline" className="text-xs">
-                          {qs.label || qs.quiz_version?.quiz?.title || "Quiz"} v{qs.quiz_version?.version}
-                        </Badge>
-                      ))}
+                    <div className="mt-3 rounded-md border">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-8">#</TableHead>
+                            <TableHead>Quiz</TableHead>
+                            <TableHead>Endpoint</TableHead>
+                            <TableHead className="w-36">Max Time (min)</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {sessionQS.map((qs, idx) => {
+                            const endpoint = qs.quiz_version?.id
+                              ? getQuizEndpoint(session.slug, qs.quiz_version.id)
+                              : null;
+                            const draft = timeLimitDrafts[qs.id];
+                            const minutesValue =
+                              draft !== undefined
+                                ? draft
+                                : qs.time_limit_seconds != null
+                                ? String(qs.time_limit_seconds / 60)
+                                : "";
+                            return (
+                              <TableRow key={qs.id}>
+                                <TableCell className="text-muted-foreground">
+                                  {idx + 1}
+                                </TableCell>
+                                <TableCell>
+                                  <span className="font-medium">
+                                    {qs.label || qs.quiz_version?.quiz?.title || "Quiz"}
+                                  </span>
+                                  <span className="ml-2 text-xs text-muted-foreground">
+                                    {qs.quiz_version?.quiz?.title} · v
+                                    {qs.quiz_version?.version}
+                                  </span>
+                                </TableCell>
+                                <TableCell>
+                                  {endpoint && (
+                                    <div className="flex items-center gap-1">
+                                      <a
+                                        href={endpoint}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="flex max-w-64 items-center gap-1 truncate font-mono text-xs text-primary hover:underline"
+                                        title={endpoint}
+                                      >
+                                        <ExternalLink className="h-3 w-3 shrink-0" />
+                                        <span className="truncate">{endpoint}</span>
+                                      </a>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-6 w-6 shrink-0 p-0"
+                                        onClick={() => copyEndpoint(qs.id, endpoint)}
+                                        title="Copy endpoint"
+                                      >
+                                        {copiedId === qs.id ? (
+                                          <Check className="h-3 w-3 text-green-600" />
+                                        ) : (
+                                          <Copy className="h-3 w-3" />
+                                        )}
+                                      </Button>
+                                    </div>
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  <Input
+                                    type="number"
+                                    min={1}
+                                    step={1}
+                                    placeholder="No limit"
+                                    className="h-8 w-24 text-xs"
+                                    value={minutesValue}
+                                    onChange={(e) =>
+                                      setTimeLimitDrafts((prev) => ({
+                                        ...prev,
+                                        [qs.id]: e.target.value,
+                                      }))
+                                    }
+                                    onBlur={(e) =>
+                                      handleTimeLimitBlur(qs.id, e.target.value)
+                                    }
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter") {
+                                        (e.target as HTMLInputElement).blur();
+                                      }
+                                    }}
+                                  />
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
                     </div>
                   )}
                   {session.description && (

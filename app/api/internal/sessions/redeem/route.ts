@@ -10,11 +10,11 @@ type ParticipantRow = Database["public"]["Tables"]["participants"]["Row"];
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const { personal_id, token } = body;
+  const { personal_id, token, quiz_version_id, competition_session_id } = body;
 
-  if (!personal_id || !token) {
+  if (!token) {
     return NextResponse.json(
-      { type: "https://docs.quizzly.app/errors/validation", title: "Validation failed", status: 400, detail: "personal_id and token are required." },
+      { type: "https://docs.quizzly.app/errors/validation", title: "Validation failed", status: 400, detail: "token is required." },
       { status: 400 }
     );
   }
@@ -54,8 +54,27 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Verify personal_id matches
-  if (participant.personal_id.toLowerCase() !== personal_id.trim().toLowerCase()) {
+  // Verify token is bound to this quiz version (public quiz entry pages)
+  if (quiz_version_id && tokenRecord.quiz_version_id !== quiz_version_id) {
+    return NextResponse.json(
+      { type: "https://docs.quizzly.app/errors/token_mismatch", title: "Token mismatch", status: 403, detail: "This token is not valid for this quiz." },
+      { status: 403 }
+    );
+  }
+
+  // Verify token is bound to this competition session when the endpoint is session-scoped
+  if (
+    competition_session_id &&
+    tokenRecord.competition_session_id !== competition_session_id
+  ) {
+    return NextResponse.json(
+      { type: "https://docs.quizzly.app/errors/token_mismatch", title: "Token mismatch", status: 403, detail: "This token is not valid for this session." },
+      { status: 403 }
+    );
+  }
+
+  // Verify personal_id matches when supplied
+  if (personal_id && participant.personal_id.toLowerCase() !== personal_id.trim().toLowerCase()) {
     return NextResponse.json(
       { type: "https://docs.quizzly.app/errors/invalid_credentials", title: "Invalid credentials", status: 401, detail: "That ID and token don't match a scheduled quiz." },
       { status: 401 }
