@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyApiKey } from "@/lib/auth/api-key";
+import { mintSessionToken, isUniqueViolation } from "@/lib/auth/session-token";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createHash, randomBytes } from "node:crypto";
 
 export async function POST(request: NextRequest) {
   const ctx = await verifyApiKey(request.headers.get("authorization"));
@@ -83,29 +83,39 @@ export async function POST(request: NextRequest) {
       continue;
     }
 
-    // Generate token
-    const rawToken = `qzt_${randomBytes(24).toString("base64url")}`;
-    const tokenHash = createHash("sha256").update(rawToken).digest("hex");
-    const tokenPrefix = rawToken.slice(0, 8);
-
     const expiresIn = t.expires_in || 86400;
     const expiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
 
-    const { data: tokenRow, error } = await supabase
-      .from("session_tokens")
-      .insert({
-        org_id: ctx.orgId,
-        participant_id: t.participant_id,
-        quiz_version_id: versionId,
-        api_key_id: ctx.apiKeyId,
-        token_hash: tokenHash,
-        token_prefix: tokenPrefix,
-        mode: t.mode || "solo",
-        expires_at: expiresAt,
-        not_before: t.not_before || null,
-      } as never)
-      .select("id")
-      .single();
+    // Generate token (6-digit numeric), retrying on the rare hash collision
+    let rawToken = "";
+    let tokenRow: unknown = null;
+    let error: { message: string; code?: string } | null = null;
+
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const minted = mintSessionToken();
+      rawToken = minted.raw;
+
+      const result = await supabase
+        .from("session_tokens")
+        .insert({
+          org_id: ctx.orgId,
+          participant_id: t.participant_id,
+          quiz_version_id: versionId,
+          api_key_id: ctx.apiKeyId,
+          token_hash: minted.hash,
+          token_prefix: minted.prefix,
+          mode: t.mode || "solo",
+          expires_at: expiresAt,
+          not_before: t.not_before || null,
+        } as never)
+        .select("id")
+        .single();
+
+      tokenRow = result.data;
+      error = result.error;
+
+      if (!error || !isUniqueViolation(error)) break;
+    }
 
     if (error) {
       failed++;

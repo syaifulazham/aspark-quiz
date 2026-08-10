@@ -90,16 +90,18 @@ export function TokenForm({
             <Input
               id="token"
               type="text"
+              inputMode="numeric"
+              maxLength={6}
               value={token}
-              onChange={(e) => setToken(e.target.value)}
+              onChange={(e) => setToken(e.target.value.replace(/\D/g, ""))}
               required
               autoComplete="off"
               spellCheck={false}
-              className="font-mono tracking-wider"
-              placeholder="qzt_••••••••••••••••"
+              className="font-mono text-center text-xl tracking-[0.5em]"
+              placeholder="••••••"
             />
             <p className="text-xs text-muted-foreground">
-              Enter the one-time token given to you by your organiser.
+              Enter the 6-digit code given to you by your organiser.
             </p>
           </div>
 

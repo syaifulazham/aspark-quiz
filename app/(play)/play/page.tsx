@@ -92,13 +92,15 @@ function PlayEntryForm() {
               <Input
                 id="token"
                 type="text"
+                inputMode="numeric"
+                maxLength={6}
                 value={token}
-                onChange={(e) => setToken(e.target.value)}
+                onChange={(e) => setToken(e.target.value.replace(/\D/g, ""))}
                 required
                 autoComplete="off"
                 spellCheck={false}
-                className="font-mono tracking-wider"
-                placeholder="qzt_••••••••••••••••"
+                className="font-mono tracking-[0.5em]"
+                placeholder="••••••"
               />
             </div>
 

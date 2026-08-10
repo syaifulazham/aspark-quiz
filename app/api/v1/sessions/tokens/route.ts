@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createHash, randomBytes } from "node:crypto";
 import { verifyApiKey } from "@/lib/auth/api-key";
+import { mintSessionToken, isUniqueViolation } from "@/lib/auth/session-token";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { issueTokenSchema } from "@/lib/schemas/token";
 
@@ -150,29 +150,39 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Mint token
-  const rawToken = `qzt_${randomBytes(24).toString("base64url")}`;
-  const tokenHash = createHash("sha256").update(rawToken).digest("base64");
-  const tokenPrefix = rawToken.slice(0, 12);
+  // Mint token (6-digit numeric), retrying on the rare hash collision
   const expiresAt = new Date(Date.now() + input.expires_in * 1000).toISOString();
+  let rawToken = "";
+  let tokenRecord: unknown = null;
+  let error: { message: string; code?: string } | null = null;
 
-  const { data: tokenRecord, error } = await supabase
-    .from("session_tokens")
-    .insert({
-      org_id: ctx.orgId,
-      participant_id: participantId,
-      quiz_version_id: quizVersionId,
-      api_key_id: ctx.apiKeyId,
-      token_hash: tokenHash,
-      token_prefix: tokenPrefix,
-      mode: input.mode,
-      live_room_id: input.live_room_id || null,
-      expires_at: expiresAt,
-      not_before: input.not_before || null,
-      competition_session_id: input.competition_session_id || null,
-    } as never)
-    .select("id")
-    .single();
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const minted = mintSessionToken();
+    rawToken = minted.raw;
+
+    const result = await supabase
+      .from("session_tokens")
+      .insert({
+        org_id: ctx.orgId,
+        participant_id: participantId,
+        quiz_version_id: quizVersionId,
+        api_key_id: ctx.apiKeyId,
+        token_hash: minted.hash,
+        token_prefix: minted.prefix,
+        mode: input.mode,
+        live_room_id: input.live_room_id || null,
+        expires_at: expiresAt,
+        not_before: input.not_before || null,
+        competition_session_id: input.competition_session_id || null,
+      } as never)
+      .select("id")
+      .single();
+
+    tokenRecord = result.data;
+    error = result.error;
+
+    if (!error || !isUniqueViolation(error)) break;
+  }
 
   if (error) {
     return NextResponse.json(
