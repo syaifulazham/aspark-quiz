@@ -22,13 +22,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Plus, GripVertical, Trash2, Check, ImagePlus, X, Eye, Code, Sigma } from "lucide-react";
+import { Plus, GripVertical, Trash2, Check, ImagePlus, X, Eye, Code, Sigma, Rocket } from "lucide-react";
 import { addQuestion, updateQuestion, deleteQuestion, addOption, updateOption, deleteOption } from "@/lib/actions/question";
+import { validateAndPublish } from "@/lib/actions/publish";
 import { KaTeXRenderer } from "@/components/katex-renderer";
 import { MathEditor } from "@/components/math-editor";
 import { cn } from "@/lib/utils";
 import { AIGenerateModal } from "./ai-generate-modal";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 interface QuizData {
@@ -100,6 +102,9 @@ export function QuizEditor({ quiz, version, questions: initialQuestions }: Props
   const [optionImageDragOver, setOptionImageDragOver] = useState(false);
   const optionImageInputRef = useRef<HTMLInputElement>(null);
   const [mathTarget, setMathTarget] = useState<{ type: "stem" } | { type: "option"; optionId: string } | null>(null);
+  const [publishIssues, setPublishIssues] = useState<Array<{ level: string; message: string }> | null>(null);
+  const [publishing, setPublishing] = useState(false);
+  const router = useRouter();
   const stemRef = useRef<HTMLTextAreaElement>(null);
   const optionInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const mathSelectionRef = useRef<{ start: number; end: number } | null>(null);
@@ -583,6 +588,30 @@ export function QuizEditor({ quiz, version, questions: initialQuestions }: Props
     });
   }
 
+  function handlePublish() {
+    setPublishing(true);
+    startTransition(async () => {
+      try {
+        const result = await validateAndPublish(quiz.id, version.id);
+        if (result.error) {
+          toast.error(result.error);
+          return;
+        }
+        if (result.published) {
+          toast.success(`Published v${version.version} — ${result.totalPoints} total points`);
+          router.refresh();
+          return;
+        }
+        // Validation failed — show issues
+        setPublishIssues(result.issues ?? []);
+      } catch {
+        toast.error("Publish failed");
+      } finally {
+        setPublishing(false);
+      }
+    });
+  }
+
   return (
     <div className="flex h-[calc(100vh-4rem)] flex-col">
       {/* Header */}
@@ -604,6 +633,12 @@ export function QuizEditor({ quiz, version, questions: initialQuestions }: Props
           <Link href={`/admin/quizzes/${quiz.id}/preview`}>
             <Button variant="outline" size="sm">Preview</Button>
           </Link>
+          {version.status === "draft" && (
+            <Button size="sm" onClick={handlePublish} disabled={publishing}>
+              <Rocket className="mr-1 h-4 w-4" />
+              {publishing ? "Publishing..." : "Publish"}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -1055,6 +1090,41 @@ export function QuizEditor({ quiz, version, questions: initialQuestions }: Props
           )}
         </div>
       </div>
+
+      {/* Publish validation issues dialog */}
+      <Dialog
+        open={publishIssues !== null}
+        onOpenChange={(open) => {
+          if (!open) setPublishIssues(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Can&apos;t publish yet</DialogTitle>
+            <DialogDescription>
+              Fix the following issues, then publish again.
+            </DialogDescription>
+          </DialogHeader>
+          <ul className="max-h-64 space-y-2 overflow-auto text-sm">
+            {(publishIssues ?? []).map((issue, i) => (
+              <li key={i} className="flex items-start gap-2">
+                <Badge
+                  variant={issue.level === "error" ? "destructive" : "secondary"}
+                  className="mt-0.5 shrink-0"
+                >
+                  {issue.level}
+                </Badge>
+                <span>{issue.message}</span>
+              </li>
+            ))}
+          </ul>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPublishIssues(null)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Math editor dialog */}
       <MathEditor
