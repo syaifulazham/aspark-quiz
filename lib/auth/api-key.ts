@@ -57,7 +57,11 @@ export async function verifyApiKey(
   }
 
   for (const key of rows) {
-    const storedHash = Buffer.from(key.key_hash, "base64");
+    // PostgREST returns bytea as "\x<hex>"
+    const storedHash = Buffer.from(
+      key.key_hash.replace(/^\\x/, ""),
+      "hex"
+    );
     if (
       storedHash.length === keyHash.length &&
       timingSafeEqual(storedHash, keyHash)

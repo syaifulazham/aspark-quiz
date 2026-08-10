@@ -61,7 +61,7 @@ export async function createApiKey(payload: {
     .insert({
       org_id: caller.profile.org_id,
       name: payload.name.trim(),
-      key_hash: hash.toString("base64"),
+      key_hash: `\\x${hash.toString("hex")}`,
       key_prefix: prefix,
       environment: payload.environment,
       scopes,
