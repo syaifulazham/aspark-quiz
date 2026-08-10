@@ -21,6 +21,7 @@ interface Props {
   quizTitle: string;
   quizVersion: number;
   timeLimitSeconds: number | null;
+  initialToken?: string;
 }
 
 export function TokenForm({
@@ -30,8 +31,9 @@ export function TokenForm({
   quizTitle,
   quizVersion,
   timeLimitSeconds,
+  initialToken = "",
 }: Props) {
-  const [token, setToken] = useState("");
+  const [token, setToken] = useState(initialToken);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const router = useRouter();

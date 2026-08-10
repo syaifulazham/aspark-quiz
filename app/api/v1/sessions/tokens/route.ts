@@ -109,10 +109,11 @@ export async function POST(request: NextRequest) {
   }
 
   // If a competition session is specified, the quiz version must belong to it
+  let sessionSlug: string | null = null;
   if (input.competition_session_id) {
     const { data: compSession } = await supabase
       .from("competition_sessions")
-      .select("id, title")
+      .select("id, title, slug")
       .eq("id", input.competition_session_id)
       .eq("org_id", ctx.orgId)
       .single();
@@ -123,6 +124,8 @@ export async function POST(request: NextRequest) {
         { status: 404 }
       );
     }
+
+    sessionSlug = (compSession as unknown as { slug: string }).slug;
 
     const { data: quizSet } = await supabase
       .from("session_quiz_sets")
@@ -197,6 +200,9 @@ export async function POST(request: NextRequest) {
     .eq("quiz_version_id", quizVersionId);
 
   const baseUrl = request.nextUrl.origin;
+  const startUrl = sessionSlug
+    ? `${baseUrl}/quiz/${sessionSlug}/${quizVersionId}?token=${rawToken}`
+    : `${baseUrl}/play?pid=${encodeURIComponent((participant as unknown as { personal_id: string })?.personal_id || "")}&token=${rawToken}`;
 
   return NextResponse.json(
     {
@@ -214,7 +220,7 @@ export async function POST(request: NextRequest) {
       },
       mode: input.mode,
       competition_session_id: input.competition_session_id || null,
-      start_url: `${baseUrl}/play?pid=${encodeURIComponent((participant as unknown as { personal_id: string })?.personal_id || "")}&token=${rawToken}`,
+      start_url: startUrl,
       expires_at: expiresAt,
       not_before: input.not_before || null,
       single_use: true,

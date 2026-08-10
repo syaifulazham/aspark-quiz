@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,8 +15,17 @@ import {
 } from "@/components/ui/card";
 
 export default function PlayEntryPage() {
-  const [personalId, setPersonalId] = useState("");
-  const [token, setToken] = useState("");
+  return (
+    <Suspense>
+      <PlayEntryForm />
+    </Suspense>
+  );
+}
+
+function PlayEntryForm() {
+  const searchParams = useSearchParams();
+  const [personalId, setPersonalId] = useState(searchParams.get("pid") ?? "");
+  const [token, setToken] = useState(searchParams.get("token") ?? "");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const router = useRouter();

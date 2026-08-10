@@ -24,10 +24,13 @@ interface QuizSetRow {
 
 export default async function QuizEntryPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ sessionSlug: string; quizVersionId: string }>;
+  searchParams: Promise<{ token?: string }>;
 }) {
   const { sessionSlug, quizVersionId } = await params;
+  const { token: prefillToken } = await searchParams;
   const admin = createAdminClient();
 
   const { data: sessions } = await admin
@@ -82,6 +85,7 @@ export default async function QuizEntryPage({
             quizTitle={quizSet.label || quizSet.quiz_version.quiz.title}
             quizVersion={quizSet.quiz_version.version}
             timeLimitSeconds={timeLimitSeconds}
+            initialToken={prefillToken ?? ""}
           />
         )}
       </div>
