@@ -10,6 +10,7 @@ import {
   Users,
   UserCog,
   Trophy,
+  BarChart3,
   Radio,
   Code2,
   Settings,
@@ -17,12 +18,18 @@ import {
 import { cn } from "@/lib/utils";
 import { LogoutButton } from "./logout-button";
 
-const navItems = [
+const navItems: Array<{
+  href: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  sub?: boolean;
+}> = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
   { href: "/admin/quizzes", label: "Quizzes", icon: FileQuestion },
   { href: "/admin/sessions", label: "Sessions", icon: CalendarDays },
   { href: "/admin/participants", label: "Participants", icon: Users },
   { href: "/admin/results", label: "Results", icon: Trophy },
+  { href: "/admin/results/stats", label: "Stats", icon: BarChart3, sub: true },
   { href: "/admin/live", label: "Live", icon: Radio },
   { href: "/admin/developers", label: "Developers", icon: Code2 },
   { href: "/admin/users", label: "Users", icon: UserCog },
@@ -61,10 +68,11 @@ export default async function AdminLayout({
               href={item.href}
               className={cn(
                 buttonVariants({ variant: "ghost", size: "default" }),
-                "justify-start gap-3 text-white/80 hover:text-white hover:bg-white/10"
+                "justify-start gap-3 text-white/80 hover:text-white hover:bg-white/10",
+                item.sub && "ml-6 h-8 text-sm text-white/60"
               )}
             >
-              <item.icon className="h-4 w-4" />
+              <item.icon className={item.sub ? "h-3.5 w-3.5" : "h-4 w-4"} />
               {item.label}
             </Link>
           ))}
