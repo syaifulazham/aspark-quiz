@@ -10,6 +10,7 @@ interface Props {
     school?: string;
     grade?: string;
     country?: string;
+    gender?: string;
   }>;
 }
 
@@ -41,6 +42,7 @@ interface ResultRow {
     school: string | null;
     grade: string | null;
     nationality: string | null;
+    gender: string | null;
   } | null;
 }
 
@@ -51,6 +53,7 @@ export default async function ResultsPage({ searchParams }: Props) {
     school: schoolFilter,
     grade: gradeFilter,
     country: countryFilter,
+    gender: genderFilter,
   } = await searchParams;
 
   const authClient = await createServerSupabaseClient();
@@ -68,6 +71,8 @@ export default async function ResultsPage({ searchParams }: Props) {
     .eq("id", user.id)
     .single();
   const orgId = (profile as unknown as { org_id: string } | null)?.org_id;
+
+  const GENDER_OPTIONS = ["male", "female", "other", "undisclosed"];
 
   let schoolOptions: string[] = [];
   let gradeOptions: string[] = [];
@@ -127,7 +132,7 @@ export default async function ResultsPage({ searchParams }: Props) {
     let query = supabase
       .from("quiz_sessions")
       .select(
-        "id, raw_score, max_score, percentage, passed, duration_ms, submitted_at, participants!inner(personal_id, full_name, school, grade, nationality), session_tokens!inner(competition_session_id, quiz_version_id)"
+        "id, raw_score, max_score, percentage, passed, duration_ms, submitted_at, participants!inner(personal_id, full_name, school, grade, nationality, gender), session_tokens!inner(competition_session_id, quiz_version_id)"
       )
       .eq("state", "submitted")
       .eq("session_tokens.competition_session_id", selectedSession.id)
@@ -136,6 +141,7 @@ export default async function ResultsPage({ searchParams }: Props) {
     if (schoolFilter) query = query.eq("participants.school", schoolFilter);
     if (gradeFilter) query = query.eq("participants.grade", gradeFilter);
     if (countryFilter) query = query.eq("participants.nationality", countryFilter);
+    if (genderFilter) query = query.eq("participants.gender", genderFilter);
 
     const { data } = await query
       .order("submitted_at", { ascending: false })
@@ -178,6 +184,7 @@ export default async function ResultsPage({ searchParams }: Props) {
           schools={schoolOptions}
           grades={gradeOptions}
           countries={countryOptions}
+          genders={GENDER_OPTIONS}
         />
       </div>
 

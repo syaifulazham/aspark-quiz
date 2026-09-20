@@ -25,11 +25,12 @@ interface Props {
   schools: string[];
   grades: string[];
   countries: string[];
+  genders: string[];
 }
 
 const ALL = "__all__";
 
-export function ResultsFilter({ sessions, quizzes, schools, grades, countries }: Props) {
+export function ResultsFilter({ sessions, quizzes, schools, grades, countries, genders }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const sessionId = searchParams.get("session") ?? "";
@@ -37,6 +38,7 @@ export function ResultsFilter({ sessions, quizzes, schools, grades, countries }:
   const school = searchParams.get("school") ?? "";
   const grade = searchParams.get("grade") ?? "";
   const country = searchParams.get("country") ?? "";
+  const gender = searchParams.get("gender") ?? "";
 
   function updateParams(next: {
     session?: string;
@@ -44,6 +46,7 @@ export function ResultsFilter({ sessions, quizzes, schools, grades, countries }:
     school?: string;
     grade?: string;
     country?: string;
+    gender?: string;
   }) {
     const params = new URLSearchParams();
     const entries = {
@@ -52,6 +55,7 @@ export function ResultsFilter({ sessions, quizzes, schools, grades, countries }:
       school: next.school ?? school,
       grade: next.grade ?? grade,
       country: next.country ?? country,
+      gender: next.gender ?? gender,
     };
     for (const [key, value] of Object.entries(entries)) {
       if (value) params.set(key, value);
@@ -61,7 +65,7 @@ export function ResultsFilter({ sessions, quizzes, schools, grades, countries }:
 
   function renderConditionSelect(
     value: string,
-    param: "school" | "grade" | "country",
+    param: "school" | "grade" | "country" | "gender",
     placeholder: string,
     options: string[]
   ) {
@@ -132,6 +136,7 @@ export function ResultsFilter({ sessions, quizzes, schools, grades, countries }:
       {renderConditionSelect(country, "country", "Countries", countries)}
       {renderConditionSelect(school, "school", "Schools", schools)}
       {renderConditionSelect(grade, "grade", "Grades", grades)}
+      {renderConditionSelect(gender, "gender", "Genders", genders)}
     </div>
   );
 }
