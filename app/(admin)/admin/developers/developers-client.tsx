@@ -61,6 +61,12 @@ interface Props {
 
 const API_REFERENCE: Array<{ method: string; path: string; scope: string; description: string }> = [
   {
+    method: "GET",
+    path: "/api/v1/participants/lookup?personal_id={id}",
+    scope: "participants:read",
+    description: "Check whether a participant exists (also accepts external_ref or email)",
+  },
+  {
     method: "POST",
     path: "/api/v1/participants",
     scope: "participants:write",
@@ -209,6 +215,18 @@ API keys look like "qz_live_..." or "qz_test_...". Keys are scoped — a request
 
 ## Endpoints
 
+### 0. Check whether a participant exists
+GET /api/v1/participants/lookup?personal_id=STU001   (scope: participants:read, or participants:write)
+
+Pass exactly ONE of the query params: personal_id, external_ref, email (matched case-insensitively, literal — no wildcards).
+Always 200 when the request is valid:
+{
+  "exists": true,                 // false if no match
+  "matched_by": "personal_id",
+  "participant": { "id", "personal_id", "full_name", "grade", "school", "agency", "nationality", "gender", "email", "external_ref", "created_at", "updated_at" }   // null when exists=false
+}
+400 if zero or more than one lookup param is given. Use this before registering to avoid 409s, or to resolve a personal_id to the Quizzly participant "id" needed by batch token issuance.
+
 ### 1. Register a participant
 POST /api/v1/participants        (scope: participants:write)
 
@@ -269,6 +287,7 @@ Returns { "token_id", "token_prefix", "status", "mode", "participant", "quiz", "
 404 if the token does not exist in the key's organisation.
 
 ## Typical flow
+0. GET /api/v1/participants/lookup?personal_id=... to check whether the participant already exists (optional).
 1. POST /api/v1/participants to register each participant (use ?upsert=true for idempotent imports).
 2. GET /api/v1/competition-sessions to find the session id.
 3. GET /api/v1/competition-sessions/{id}/quizzes to find the quiz_id (and latest published version) in that session.
@@ -459,7 +478,13 @@ Returns { "token_id", "token_prefix", "status", "mode", "participant", "quiz", "
               Example
             </p>
             <pre className="overflow-x-auto font-mono text-xs">
-{`curl -X POST ${origin}/api/v1/participants \\
+{`# Check whether a participant exists
+curl "${origin}/api/v1/participants/lookup?personal_id=STU001" \\
+  -H "Authorization: Bearer qz_live_..."
+# → {"exists": false, "matched_by": "personal_id", "participant": null}
+
+# Register a participant
+curl -X POST ${origin}/api/v1/participants \\
   -H "Authorization: Bearer qz_live_..." \\
   -H "Content-Type: application/json" \\
   -d '{"personal_id": "STU001", "full_name": "Ahmad", "grade": "Grade 5"}'`}

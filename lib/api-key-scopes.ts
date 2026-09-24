@@ -1,4 +1,5 @@
 export const AVAILABLE_SCOPES = [
+  "participants:read",
   "participants:write",
   "tokens:write",
   "tokens:read",
