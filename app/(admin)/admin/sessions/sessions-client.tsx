@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -118,9 +119,13 @@ export function SessionsClient({
   participantCounts,
   origin,
 }: Props) {
+  const router = useRouter();
   const [sessions, setSessions] = useState(initialSessions);
   const [quizSets, setQuizSets] = useState(initialQuizSets);
   const [isPending, startTransition] = useTransition();
+
+  // Pick up fresh server data after router.refresh() so the page never shows a stale quiz list
+  useEffect(() => setQuizSets(initialQuizSets), [initialQuizSets]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingSession, setEditingSession] = useState<CompetitionSession | null>(null);
 
@@ -215,6 +220,14 @@ export function SessionsClient({
       return;
     }
 
+    const dupes = duplicateVersionIds(formQuizSets);
+    if (dupes.size > 0) {
+      toast.error(
+        `Each quiz can only be added once. Remove the duplicate: ${[...dupes].map(getQuizVersionLabel).join(", ")}.`
+      );
+      return;
+    }
+
     startTransition(async () => {
       const payload = {
         title: formData.title,
@@ -245,6 +258,7 @@ export function SessionsClient({
           )
         );
         setDialogOpen(false);
+        router.refresh();
         toast.success("Session updated");
       } else {
         const result = await createCompetitionSession(payload);
@@ -253,22 +267,28 @@ export function SessionsClient({
           return;
         }
         if (result.id) {
-          // Save quiz sets
+          const created = {
+            id: result.id,
+            org_id: "",
+            ...payload,
+            is_active: true,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          } as CompetitionSession;
+          setSessions([created, ...sessions]);
+
           if (validQuizSets.length > 0) {
-            await setSessionQuizSets(result.id, validQuizSets);
+            const qsResult = await setSessionQuizSets(result.id, validQuizSets);
+            if (qsResult.error) {
+              // Session exists now; keep the dialog open in edit mode so the quiz list isn't lost
+              setEditingSession(created);
+              router.refresh();
+              toast.error(`Session created, but quizzes were not saved: ${qsResult.error}`);
+              return;
+            }
           }
-          setSessions([
-            {
-              id: result.id,
-              org_id: "",
-              ...payload,
-              is_active: true,
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            } as CompetitionSession,
-            ...sessions,
-          ]);
           setDialogOpen(false);
+          router.refresh();
           toast.success("Session created");
         }
       }
@@ -706,10 +726,17 @@ export function SessionsClient({
                   No quiz sets assigned. Click &quot;Add Quiz&quot; to assign quizzes to this session.
                 </p>
               )}
-              {formQuizSets.map((qs, index) => (
+              {formQuizSets.map((qs, index) => {
+                const takenElsewhere = new Set(
+                  formQuizSets.filter((_, i) => i !== index).map((o) => o.quiz_version_id).filter(Boolean)
+                );
+                const isDuplicate = !!qs.quiz_version_id && takenElsewhere.has(qs.quiz_version_id);
+                return (
                 <div
                   key={index}
-                  className="flex items-center gap-2 rounded-lg border border-border p-2"
+                  className={`flex items-center gap-2 rounded-lg border p-2 ${
+                    isDuplicate ? "border-destructive bg-destructive/5" : "border-border"
+                  }`}
                 >
                   <div className="flex-1">
                     <Select
@@ -718,18 +745,24 @@ export function SessionsClient({
                         updateQuizSet(index, "quiz_version_id", !v || v === "none" ? "" : v)
                       }
                     >
-                      <SelectTrigger className="h-8 text-xs">
+                      <SelectTrigger className="h-8 text-xs" aria-invalid={isDuplicate || undefined}>
                         <SelectValue placeholder="Select quiz version" />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="none">Select quiz…</SelectItem>
                         {quizVersions.map((qv) => (
-                          <SelectItem key={qv.id} value={qv.id}>
+                          <SelectItem key={qv.id} value={qv.id} disabled={takenElsewhere.has(qv.id)}>
                             {qv.quiz.title} (v{qv.version}) – {qv.status}
+                            {takenElsewhere.has(qv.id) && " · already added"}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
+                    {isDuplicate && (
+                      <p className="mt-1 text-[11px] text-destructive">
+                        This quiz is already in the list. Remove one of them.
+                      </p>
+                    )}
                   </div>
                   <Input
                     className="h-8 w-28 text-xs"
@@ -747,7 +780,8 @@ export function SessionsClient({
                     <X className="h-3.5 w-3.5" />
                   </Button>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
@@ -774,6 +808,16 @@ export function SessionsClient({
 }
 
 // ─── Helpers ───
+
+function duplicateVersionIds(rows: Array<{ quiz_version_id: string }>) {
+  const seen = new Set<string>();
+  const dupes = new Set<string>();
+  for (const { quiz_version_id: id } of rows) {
+    if (!id) continue;
+    (seen.has(id) ? dupes : seen).add(id);
+  }
+  return dupes;
+}
 
 function toLocalDatetime(iso: string) {
   const d = new Date(iso);

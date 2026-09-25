@@ -107,44 +107,61 @@ export async function setSessionQuizSets(sessionId: string, quizSets: QuizSetPay
 
   const admin = createAdminClient();
 
-  // Capture existing time limits so they survive the delete/re-insert
-  const { data: existingSets } = await admin
-    .from("session_quiz_sets")
-    .select("quiz_version_id, time_limit_seconds")
-    .eq("competition_session_id", sessionId);
+  const { data: session } = await admin
+    .from("competition_sessions")
+    .select("id")
+    .eq("id", sessionId)
+    .eq("org_id", orgId)
+    .maybeSingle();
+  if (!session) return { error: "Session not found" };
 
-  const timeLimitByVersion = new Map<string, number | null>(
-    ((existingSets ?? []) as unknown as Array<{
-      quiz_version_id: string;
-      time_limit_seconds: number | null;
-    }>).map((row) => [row.quiz_version_id, row.time_limit_seconds])
+  const wanted = quizSets.filter((qs) => qs.quiz_version_id);
+  const versionIds = wanted.map((qs) => qs.quiz_version_id);
+
+  // Validate everything up front so a bad request never touches existing rows
+  const { data: versions } = versionIds.length
+    ? await admin
+        .from("quiz_versions")
+        .select("id, version, quiz:quizzes(title)")
+        .eq("org_id", orgId)
+        .in("id", versionIds)
+    : { data: [] };
+  const versionName = new Map(
+    ((versions ?? []) as unknown as Array<{ id: string; version: number; quiz: { title: string } | null }>).map(
+      (v) => [v.id, `${v.quiz?.title ?? "Untitled quiz"} (v${v.version})`]
+    )
   );
 
-  // Delete existing quiz sets for this session
-  await admin
-    .from("session_quiz_sets")
-    .delete()
-    .eq("competition_session_id", sessionId);
+  const unknown = versionIds.filter((id) => !versionName.has(id));
+  if (unknown.length) return { error: "One or more selected quizzes no longer exist." };
 
-  if (quizSets.length === 0) {
-    revalidatePath("/admin/sessions");
-    return { success: true };
+  const seen = new Set<string>();
+  const duplicates = new Set<string>();
+  for (const id of versionIds) (seen.has(id) ? duplicates : seen).add(id);
+  if (duplicates.size) {
+    const names = [...duplicates].map((id) => versionName.get(id)).join(", ");
+    return { error: `Each quiz can only be added once. Remove the duplicate: ${names}.` };
   }
 
-  // Insert new quiz sets
-  const rows = quizSets.map((qs) => ({
-    competition_session_id: sessionId,
-    quiz_version_id: qs.quiz_version_id,
-    position: qs.position,
-    label: qs.label || null,
-    time_limit_seconds: timeLimitByVersion.get(qs.quiz_version_id) ?? null,
-  }));
+  // Upsert the wanted rows first (keeps ids and time limits of existing ones),
+  // then remove the ones no longer selected. A failure here leaves the old list intact.
+  if (wanted.length) {
+    const { error } = await admin.from("session_quiz_sets").upsert(
+      wanted.map((qs, i) => ({
+        competition_session_id: sessionId,
+        quiz_version_id: qs.quiz_version_id,
+        position: i,
+        label: qs.label?.trim() || null,
+      })) as never[],
+      { onConflict: "competition_session_id,quiz_version_id" }
+    );
+    if (error) return { error: error.message };
+  }
 
-  const { error } = await admin
-    .from("session_quiz_sets")
-    .insert(rows as never[]);
-
-  if (error) return { error: error.message };
+  let removal = admin.from("session_quiz_sets").delete().eq("competition_session_id", sessionId);
+  if (versionIds.length) removal = removal.not("quiz_version_id", "in", `(${versionIds.join(",")})`);
+  const { error: removeError } = await removal;
+  if (removeError) return { error: removeError.message };
 
   revalidatePath("/admin/sessions");
   return { success: true };
