@@ -457,6 +457,31 @@ Errors: `400` validation, `403` quiz not in key allow-list, `404` participant / 
 
 `status` ∈ `active` | `not_yet_valid` | `redeemed` | `expired` | `revoked`. `session` is `null` until redeemed.
 
+`expired_unused` is `true` exactly when `status` is `expired`. Status is resolved in the order revoked → redeemed → expired → not_yet_valid → active, so a token that was *used* keeps reporting `redeemed` after its `expires_at` passes — `expired` therefore always means it lapsed **without ever being redeemed**, and is safe to replace with a fresh token. Revoked tokens are excluded on purpose: re-issuing would undo an admin's decision.
+
+#### `POST /api/v1/sessions/tokens/status` — `[tokens:read]` (or `tokens:write`)
+
+Lifecycle state for many tokens in one call — e.g. to find which of a participant's tokens expired unused.
+
+```json
+{ "token_ids": ["<uuid>", "<uuid>"] }
+```
+
+```json
+{
+  "checked_at": "…",
+  "data": [
+    { "token_id": "…", "status": "expired", "expired_unused": true,
+      "expires_at": "…", "redeemed_at": null, "revoked_at": null }
+  ],
+  "not_found": ["<uuid>"]
+}
+```
+
+- Max 500 ids; duplicates are collapsed. `POST` only because 500 UUIDs overflow a URL — it is read-only.
+- Ids that are unknown, malformed or belong to another organisation are listed in `not_found`.
+- Errors: `400` validation, `401`, `403` missing scope.
+
 ---
 
 ### 6.6 Quiz sessions (attempts & results)

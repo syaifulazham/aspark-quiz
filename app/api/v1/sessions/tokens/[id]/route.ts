@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyApiKey } from "@/lib/auth/api-key";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { deriveTokenStatus } from "@/lib/auth/token-status";
 
 interface TokenRow {
   id: string;
@@ -56,20 +57,7 @@ export async function GET(
     );
   }
 
-  // Derive status
-  const now = new Date();
-  let status: "active" | "not_yet_valid" | "redeemed" | "expired" | "revoked";
-  if (token.revoked_at) {
-    status = "revoked";
-  } else if (token.redeemed_at) {
-    status = "redeemed";
-  } else if (new Date(token.expires_at) < now) {
-    status = "expired";
-  } else if (token.not_before && new Date(token.not_before) > now) {
-    status = "not_yet_valid";
-  } else {
-    status = "active";
-  }
+  const status = deriveTokenStatus(token);
 
   // Participant
   const { data: participant } = await supabase
@@ -114,6 +102,7 @@ export async function GET(
     token_id: token.id,
     token_prefix: token.token_prefix,
     status,
+    expired_unused: status === "expired",
     mode: token.mode,
     participant: participant as unknown,
     quiz: qv
