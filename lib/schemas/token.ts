@@ -3,7 +3,9 @@ import { z } from "zod";
 export const issueTokenSchema = z.object({
   participant_id: z.string().uuid().optional(),
   personal_id: z.string().min(1).max(64).optional(),
-  quiz_id: z.string().uuid(),
+  quiz_id: z.string().uuid().optional(),
+  // Identifies one quiz within one competition session; implies both quiz_id and competition_session_id
+  session_quiz_set_id: z.string().uuid().optional(),
   quiz_version: z
     .union([z.literal("latest_published"), z.number().int().positive()])
     .default("latest_published"),

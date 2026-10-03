@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyApiKey } from "@/lib/auth/api-key";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { resolveTokenTarget } from "@/lib/tokens/resolve-target";
 
 export async function GET(
   request: NextRequest,
@@ -24,6 +25,7 @@ export async function GET(
   const searchParams = request.nextUrl.searchParams;
   const school = searchParams.get("school");
   const agency = searchParams.get("agency");
+  const competitionSessionId = searchParams.get("competition_session_id");
   const limit = Math.min(parseInt(searchParams.get("limit") || "100"), 500);
 
   // Get quiz info
@@ -38,16 +40,36 @@ export async function GET(
     return NextResponse.json({ type: "not_found", title: "Quiz not found", status: 404 }, { status: 404 });
   }
 
-  // Get published versions
-  const { data: versions } = await supabase
-    .from("quiz_versions")
-    .select("id, version")
-    .eq("quiz_id", id)
-    .eq("status", "published")
-    .order("version", { ascending: false })
-    .limit(1);
+  let latestVersion: { id: string; version: number } | undefined;
+  let competitionSession: { id: string; title: string; slug: string } | null = null;
 
-  const latestVersion = ((versions ?? []) as unknown as Array<{ id: string; version: number }>)[0];
+  if (competitionSessionId) {
+    // Rank the version this session actually uses, and only this session's attempts
+    const resolved = await resolveTokenTarget(supabase, ctx.orgId, { quizId: id, competitionSessionId });
+    if ("error" in resolved) {
+      return NextResponse.json(
+        { type: "not_found", title: resolved.error.title, status: 404, detail: resolved.error.detail },
+        { status: 404 }
+      );
+    }
+    const [{ data: v }, { data: cs }] = await Promise.all([
+      supabase.from("quiz_versions").select("id, version").eq("id", resolved.target.quizVersionId).single(),
+      supabase.from("competition_sessions").select("id, title, slug").eq("id", competitionSessionId).single(),
+    ]);
+    latestVersion = (v as unknown as { id: string; version: number } | null) ?? undefined;
+    competitionSession = (cs as unknown as { id: string; title: string; slug: string } | null) ?? null;
+  } else {
+    // Get published versions
+    const { data: versions } = await supabase
+      .from("quiz_versions")
+      .select("id, version")
+      .eq("quiz_id", id)
+      .eq("status", "published")
+      .order("version", { ascending: false })
+      .limit(1);
+    latestVersion = ((versions ?? []) as unknown as Array<{ id: string; version: number }>)[0];
+  }
+
   if (!latestVersion) {
     return NextResponse.json({ type: "not_found", title: "No published version", status: 404 }, { status: 404 });
   }
@@ -55,7 +77,11 @@ export async function GET(
   // Get best sessions per participant (highest percentage, then shortest duration)
   let query = supabase
     .from("quiz_sessions")
-    .select("participant_id, percentage, duration_ms, submitted_at, participants!inner(personal_id, full_name, school, agency)")
+    .select(
+      `participant_id, percentage, duration_ms, submitted_at, participants!inner(personal_id, full_name, school, agency)${
+        competitionSessionId ? ", token:session_tokens!inner(competition_session_id)" : ""
+      }`
+    )
     .eq("quiz_version_id", latestVersion.id)
     .eq("org_id", ctx.orgId)
     .eq("state", "submitted")
@@ -67,6 +93,7 @@ export async function GET(
 
   if (school) query = query.eq("participants.school", school);
   if (agency) query = query.eq("participants.agency", agency);
+  if (competitionSessionId) query = query.eq("token.competition_session_id", competitionSessionId);
 
   const { data: sessions } = await query;
   const rows = (sessions ?? []) as unknown as Array<{
@@ -101,6 +128,7 @@ export async function GET(
 
   return NextResponse.json({
     quiz: { id: (quiz as unknown as { id: string; title: string }).id, title: (quiz as unknown as { id: string; title: string }).title, version: latestVersion.version },
+    ...(competitionSession ? { competition_session: competitionSession } : {}),
     scope: Object.keys(scope).length > 0 ? scope : undefined,
     generated_at: new Date().toISOString(),
     data: leaderboard,

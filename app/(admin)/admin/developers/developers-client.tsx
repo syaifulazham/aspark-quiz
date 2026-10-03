@@ -88,7 +88,13 @@ const API_REFERENCE: Array<{ method: string; path: string; scope: string; descri
     method: "POST",
     path: "/api/v1/sessions/tokens",
     scope: "tokens:write",
-    description: "Create a one-time login token for a participant",
+    description: "Create a one-time login token for a participant in one session quiz (pass session_quiz_set_id)",
+  },
+  {
+    method: "POST",
+    path: "/api/v1/sessions/tokens/batch",
+    scope: "tokens:write",
+    description: "Create up to 500 tokens at once (each item: participant_id + session_quiz_set_id)",
   },
   {
     method: "GET",
@@ -259,6 +265,7 @@ GET /api/v1/competition-sessions/{sessionId}/quizzes   (scope: sessions:read)
 
 Returns { "session": { "id", "title", "slug" }, "data": [{ "session_quiz_set_id", "position", "label", "quiz_version_id", "quiz": { "id", "slug", "title" }, "version", "status", "time_limit_seconds" }] }.
 404 if the session does not exist in the key's organisation.
+"session_quiz_set_id" identifies this quiz INSIDE this session. The same quiz can be reused by several sessions (e.g. a Vietnam round and a Bangladesh round), but each session quiz is unique — always use session_quiz_set_id to say which one you mean.
 
 ### 4. Create a one-time login token for a participant
 POST /api/v1/sessions/tokens      (scope: tokens:write)
@@ -266,17 +273,24 @@ POST /api/v1/sessions/tokens      (scope: tokens:write)
 Body:
 {
   "participant_id": "uuid",              // OR "personal_id": "STU001"
-  "quiz_id": "uuid",                     // required
-  "quiz_version": "latest_published",    // or a version number
-  "competition_session_id": "uuid",      // optional but recommended: binds the token to participant + session + quiz set. The quiz version must belong to this session (422 otherwise).
+  "session_quiz_set_id": "uuid",         // recommended: one quiz in one session (from endpoint #3). Implies quiz_id, competition_session_id and version.
+  // Older equivalent form instead of session_quiz_set_id:
+  // "quiz_id": "uuid", "competition_session_id": "uuid", "quiz_version": "latest_published" | <number>
   "expires_in": 86400,                   // seconds until expiry
   "mode": "solo",                        // "solo" | "live"
   "not_before": null                     // optional ISO timestamp
 }
 
-Each token is specific to ONE participant + ONE session + ONE quiz — e.g. Jamil / "Asia Spark Test 1" / "Mathematics for Grade 7" = 1 token. Pass competition_session_id (from endpoint #2) together with the quiz_id (from endpoint #3) so the binding is validated and recorded.
+Each token is specific to ONE participant + ONE session quiz — e.g. Jamil / "Asia Spark Test 1" / "Mathematics for Grade 7" = 1 token. Issue it only in the participant's OWN session: if a quiz is shared by several sessions, do NOT issue a code in each of them.
+If both session_quiz_set_id and quiz_id / competition_session_id / quiz_version are sent they must match (422 with code session_mismatch / quiz_mismatch / version_mismatch).
 
-Success: 201 with { "token", "token_id", "participant", "quiz", "mode", "competition_session_id", "start_url", "expires_at", "single_use": true }.
+Success: 201 with { "token", "token_id", "participant", "quiz", "mode", "competition_session_id", "session_quiz_set_id", "start_url", "expires_at", "single_use": true }.
+If no session was given, the code is still issued and the response includes "warnings": [{ "code": "no_competition_session", ... }] — fix the request so it includes session_quiz_set_id.
+
+### 4b. Create tokens in bulk
+POST /api/v1/sessions/tokens/batch   (scope: tokens:write)
+Body: { "tokens": [{ "participant_id": "uuid", "session_quiz_set_id": "uuid", "expires_in": 172800 }] }   // max 500; quiz_id (+ competition_session_id) also accepted
+Returns 207 { "issued", "failed", "results": [{ "index", "status": "issued" | "failed", "token", "token_id", "competition_session_id", "session_quiz_set_id", "start_url", "expires_at", "error"? }] }.
 The "token" is a 6-digit numeric code. The "start_url" is a ready-to-open link with the code prefilled that logs the participant straight into the quiz. Tokens are single-use — once redeemed they cannot be reused.
 
 ### 5. Get token status
@@ -289,10 +303,11 @@ Returns { "token_id", "token_prefix", "status", "mode", "participant", "quiz", "
 ## Typical flow
 0. GET /api/v1/participants/lookup?personal_id=... to check whether the participant already exists (optional).
 1. POST /api/v1/participants to register each participant (use ?upsert=true for idempotent imports).
-2. GET /api/v1/competition-sessions to find the session id.
-3. GET /api/v1/competition-sessions/{id}/quizzes to find the quiz_id (and latest published version) in that session.
-4. POST /api/v1/sessions/tokens per participant+quiz, then distribute each "start_url" to the right participant.
+2. GET /api/v1/competition-sessions to find the participant's own session id.
+3. GET /api/v1/competition-sessions/{id}/quizzes to find the session_quiz_set_id of each quiz in that session.
+4. POST /api/v1/sessions/tokens per participant + session_quiz_set_id (their session only), then distribute each "start_url" to the right participant.
 5. GET /api/v1/sessions/tokens/{tokenId} to poll redemption status and results.
+6. Results: GET /api/v1/sessions?competition_session_id=...&state=submitted (scope: results:read). Each result includes "competition_session" { id, title, slug }; /quizzes/{id}/leaderboard and /participants/{id}/results also accept competition_session_id.
 
 ## Guidelines
 - Never log or commit the API key.

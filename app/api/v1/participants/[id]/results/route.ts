@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyApiKey } from "@/lib/auth/api-key";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { competitionSessionEmbed, competitionSessionOf } from "@/lib/tokens/competition-session-of";
 
 export async function GET(
   request: NextRequest,
@@ -25,6 +26,7 @@ export async function GET(
   const supabase = createAdminClient();
   const searchParams = request.nextUrl.searchParams;
   const quizId = searchParams.get("quiz_id");
+  const competitionSessionId = searchParams.get("competition_session_id");
   const includeAnswers = searchParams.get("include") === "answers";
 
   // Fetch participant
@@ -45,11 +47,13 @@ export async function GET(
   // Fetch sessions
   let query = supabase
     .from("quiz_sessions")
-    .select("*")
+    .select(`*, ${competitionSessionEmbed(!!competitionSessionId)}`)
     .eq("participant_id", id)
     .eq("org_id", ctx.orgId)
     .eq("state", "submitted")
     .order("submitted_at", { ascending: false });
+
+  if (competitionSessionId) query = query.eq("token.competition_session_id", competitionSessionId);
 
   if (quizId) {
     // Get version IDs for this quiz
@@ -97,6 +101,7 @@ export async function GET(
 
       const entry: Record<string, unknown> = {
         session_id: session.id,
+        competition_session: competitionSessionOf(session),
         quiz: quizInfo,
         mode: session.mode,
         state: session.state,

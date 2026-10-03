@@ -3,6 +3,7 @@ import { verifyApiKey } from "@/lib/auth/api-key";
 import { mintSessionToken, isUniqueViolation } from "@/lib/auth/session-token";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { issueTokenSchema } from "@/lib/schemas/token";
+import { NO_SESSION_WARNING, resolveTokenTarget } from "@/lib/tokens/resolve-target";
 
 export async function POST(request: NextRequest) {
   const ctx = await verifyApiKey(request.headers.get("authorization"));
@@ -69,81 +70,25 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Resolve quiz version
-  let quizVersionId: string;
-  if (input.quiz_version === "latest_published") {
-    const { data: version } = await supabase
-      .from("quiz_versions")
-      .select("id")
-      .eq("org_id", ctx.orgId)
-      .eq("quiz_id", input.quiz_id)
-      .eq("status", "published")
-      .order("version", { ascending: false })
-      .limit(1)
-      .single();
-
-    if (!version) {
-      return NextResponse.json(
-        { type: "https://docs.quizzly.app/errors/unprocessable", title: "No published version", status: 422, detail: "This quiz has no published version." },
-        { status: 422 }
-      );
-    }
-    quizVersionId = (version as unknown as { id: string }).id;
-  } else {
-    const { data: version } = await supabase
-      .from("quiz_versions")
-      .select("id")
-      .eq("org_id", ctx.orgId)
-      .eq("quiz_id", input.quiz_id)
-      .eq("version", input.quiz_version)
-      .eq("status", "published")
-      .single();
-
-    if (!version) {
-      return NextResponse.json(
-        { type: "https://docs.quizzly.app/errors/not_found", title: "Version not found", status: 404, detail: `Quiz version ${input.quiz_version} not found or not published.` },
-        { status: 404 }
-      );
-    }
-    quizVersionId = (version as unknown as { id: string }).id;
+  // Resolve which quiz version (and session) this code is for
+  const resolved = await resolveTokenTarget(supabase, ctx.orgId, {
+    quizId: input.quiz_id,
+    quizVersion: input.quiz_version,
+    competitionSessionId: input.competition_session_id,
+    sessionQuizSetId: input.session_quiz_set_id,
+  });
+  if ("error" in resolved) {
+    const e = resolved.error;
+    const type = e.status === 404 ? "not_found" : e.status === 400 ? "validation" : "unprocessable";
+    return NextResponse.json(
+      { type: `https://docs.quizzly.app/errors/${type}`, title: e.title, status: e.status, detail: e.detail, code: e.code },
+      { status: e.status }
+    );
   }
-
-  // If a competition session is specified, the quiz version must belong to it
-  let sessionSlug: string | null = null;
-  if (input.competition_session_id) {
-    const { data: compSession } = await supabase
-      .from("competition_sessions")
-      .select("id, title, slug")
-      .eq("id", input.competition_session_id)
-      .eq("org_id", ctx.orgId)
-      .single();
-
-    if (!compSession) {
-      return NextResponse.json(
-        { type: "https://docs.quizzly.app/errors/not_found", title: "Session not found", status: 404, detail: "No competition session with this id in this organisation." },
-        { status: 404 }
-      );
-    }
-
-    sessionSlug = (compSession as unknown as { slug: string }).slug;
-
-    const { data: quizSet } = await supabase
-      .from("session_quiz_sets")
-      .select("id")
-      .eq("competition_session_id", input.competition_session_id)
-      .eq("quiz_version_id", quizVersionId)
-      .maybeSingle();
-
-    if (!quizSet) {
-      return NextResponse.json(
-        { type: "https://docs.quizzly.app/errors/unprocessable", title: "Quiz not in session", status: 422, detail: "The resolved quiz version is not part of this competition session." },
-        { status: 422 }
-      );
-    }
-  }
+  const { quizId, quizVersionId, competitionSessionId, sessionSlug, sessionQuizSetId } = resolved.target;
 
   // Check quiz_ids scope
-  if (ctx.quizIds && !ctx.quizIds.includes(input.quiz_id)) {
+  if (ctx.quizIds && !ctx.quizIds.includes(quizId)) {
     return NextResponse.json(
       { type: "https://docs.quizzly.app/errors/forbidden", title: "Forbidden", status: 403, detail: "This API key is not authorised for this quiz." },
       { status: 403 }
@@ -173,7 +118,7 @@ export async function POST(request: NextRequest) {
         live_room_id: input.live_room_id || null,
         expires_at: expiresAt,
         not_before: input.not_before || null,
-        competition_session_id: input.competition_session_id || null,
+        competition_session_id: competitionSessionId,
       } as never)
       .select("id")
       .single();
@@ -220,7 +165,7 @@ export async function POST(request: NextRequest) {
       token_id: (tokenRecord as unknown as { id: string })?.id,
       participant: participant,
       quiz: {
-        id: input.quiz_id,
+        id: quizId,
         title: (quizVersion as unknown as Record<string, unknown>)?.quizzes
           ? ((quizVersion as unknown as Record<string, unknown>).quizzes as Record<string, unknown>)?.title
           : null,
@@ -229,11 +174,13 @@ export async function POST(request: NextRequest) {
         time_limit_seconds: (quizVersion as unknown as Record<string, unknown>)?.time_limit_seconds,
       },
       mode: input.mode,
-      competition_session_id: input.competition_session_id || null,
+      competition_session_id: competitionSessionId,
+      session_quiz_set_id: sessionQuizSetId,
       start_url: startUrl,
       expires_at: expiresAt,
       not_before: input.not_before || null,
       single_use: true,
+      ...(competitionSessionId ? {} : { warnings: [NO_SESSION_WARNING] }),
     },
     { status: 201 }
   );

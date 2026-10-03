@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyApiKey } from "@/lib/auth/api-key";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { competitionSessionEmbed, competitionSessionOf } from "@/lib/tokens/competition-session-of";
 
 export async function GET(request: NextRequest) {
   const ctx = await verifyApiKey(request.headers.get("authorization"));
@@ -22,6 +23,7 @@ export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
 
   const quizId = searchParams.get("quiz_id");
+  const competitionSessionId = searchParams.get("competition_session_id");
   const state = searchParams.get("state");
   const school = searchParams.get("school");
   const agency = searchParams.get("agency");
@@ -36,9 +38,11 @@ export async function GET(request: NextRequest) {
 
   let query = supabase
     .from("quiz_sessions")
-    .select("*, participants!inner(personal_id, full_name, school, agency)")
+    .select(`*, participants!inner(personal_id, full_name, school, agency), ${competitionSessionEmbed(!!competitionSessionId)}`)
     .eq("org_id", ctx.orgId)
     .limit(limit + 1);
+
+  if (competitionSessionId) query = query.eq("token.competition_session_id", competitionSessionId);
 
   // Filters
   if (quizId) {
@@ -90,6 +94,7 @@ export async function GET(request: NextRequest) {
       session_id: s.id,
       participant_id: s.participant_id,
       participant: s.participants,
+      competition_session: competitionSessionOf(s),
       mode: s.mode,
       state: s.state,
       score: {

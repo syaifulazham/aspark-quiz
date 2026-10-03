@@ -16,10 +16,13 @@ This guide is for third-party systems (school portals, registration systems, CRM
 | **Participant** | A person who takes quizzes. Identified in *your* system by `personal_id` (student ID, IC number, etc.), which is unique per org. Quizzly assigns its own UUID `id`. |
 | **Quiz / Quiz version** | A quiz is a container; each *published* version is an immutable set of questions and settings. Participants always sit a specific version. |
 | **Competition session** | A named event (e.g. "Online Qualifying Round") that groups a set of quiz versions. Recommended for competitions so results can be reported per event. |
+| **Session quiz** (`session_quiz_set_id`) | One quiz **inside one competition session**. The same quiz version can be reused by several sessions (e.g. a Vietnam round and a Bangladesh round), but each session quiz is unique, and codes, attempts and results belong to exactly one of them. `session_quiz_set_id` is the identifier for that pair. |
 | **Session token** | A **6-digit, single-use** login code that binds *one participant* to *one quiz version* (optionally within *one competition session*). Issuing a token is how you "schedule" someone to take a quiz. |
 | **Quiz session** | The actual attempt. Created when a token is redeemed. Moves through `issued → active → submitted` (or `voided`). Scores live here. |
 
-The relationship is: **1 participant + 1 quiz + 1 competition session = 1 token = 1 attempt**.
+The relationship is: **1 participant + 1 session quiz (quiz within a session) = 1 token = 1 attempt**.
+
+> **Important:** issue a participant's code only for the session they belong to. If the same quiz is used in several sessions, asking for a code in each session gives the participant a valid login in each — and their result will be recorded under whichever one they use.
 
 ---
 
@@ -166,16 +169,18 @@ curl "$BASE/api/v1/competition-sessions" -H "Authorization: Bearer $KEY"
 
 ```bash
 curl "$BASE/api/v1/competition-sessions/$SESSION_ID/quizzes" -H "Authorization: Bearer $KEY"
-# → each item has quiz.id (use as quiz_id) and version
+# → each item has session_quiz_set_id (this quiz in this session), quiz.id and version
 ```
 
-**Step 4 – Issue a token per participant + quiz** (`tokens:write`)
+**Step 4 – Issue a token per participant + session quiz** (`tokens:write`)
 
 ```bash
 curl -X POST "$BASE/api/v1/sessions/tokens" \
   -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
-  -d '{"personal_id":"STU001","quiz_id":"'$QUIZ_ID'","competition_session_id":"'$SESSION_ID'","expires_in":172800}'
+  -d '{"personal_id":"STU001","session_quiz_set_id":"'$SESSION_QUIZ_SET_ID'","expires_in":172800}'
 ```
+
+`session_quiz_set_id` alone identifies both the session and the quiz. The older form — `quiz_id` + `competition_session_id` — still works and is equivalent.
 
 Response (201):
 
@@ -187,6 +192,7 @@ Response (201):
   "quiz": { "id": "…", "title": "Mathematics Grade 5", "version": 1, "question_count": 30, "time_limit_seconds": 3600 },
   "mode": "solo",
   "competition_session_id": "…",
+  "session_quiz_set_id": "…",
   "start_url": "https://quizzly.example.org/quiz/online-qualifying-round/<quiz_version_id>?token=482913",
   "expires_at": "2026-09-22T10:00:00.000Z",
   "not_before": null,
@@ -327,7 +333,7 @@ Per-item `status` is `created` / `updated` / `failed`; failures carry `error: { 
 
 All **submitted** attempts for one participant (`{id}` is the Quizzly UUID).
 
-Query: `quiz_id` (filter to one quiz), `include=answers` (attach per-question answers).
+Query: `quiz_id` (filter to one quiz), `competition_session_id` (only attempts in that session), `include=answers` (attach per-question answers).
 
 ```json
 {
@@ -336,6 +342,7 @@ Query: `quiz_id` (filter to one quiz), `include=answers` (attach per-question an
   "data": [
     {
       "session_id": "…",
+      "competition_session": { "id": "…", "title": "Online Qualifying Round", "slug": "online-qualifying-round" },
       "quiz": { "id": "…", "title": "Mathematics Grade 5", "version": 1 },
       "mode": "solo",
       "state": "submitted",
@@ -374,7 +381,7 @@ Quizzes attached to the session, in display order.
 }
 ```
 
-Use `quiz.id` as `quiz_id` when issuing tokens. `404` if the session is not in your org.
+Pass `session_quiz_set_id` when issuing tokens. It identifies this quiz **in this session**, so the code can't end up in another session that reuses the same quiz. (`quiz.id` + the session id also works.) `404` if the session is not in your org.
 
 ---
 
@@ -394,13 +401,17 @@ Quiz detail with every version and its settings (`status`, `time_limit_seconds`,
 
 #### `GET /api/v1/quizzes/{id}/leaderboard` — `[results:read]`
 
-Best submitted attempt per participant on the **latest published version**, ranked by percentage desc, then duration asc.
+Best submitted attempt per participant, ranked by percentage desc, then duration asc.
 
-Query: `school`, `agency` (exact match), `limit` (default 100, max 500).
+Query: `competition_session_id` (recommended), `school`, `agency` (exact match), `limit` (default 100, max 500).
+
+- **With `competition_session_id`:** only that session's attempts, on the quiz version that session uses. The response includes `competition_session`. `404` if the quiz isn't in that session.
+- **Without it:** all attempts on the **latest published version**, across every session that uses it.
 
 ```json
 {
   "quiz": { "id": "…", "title": "Mathematics Grade 2", "version": 1 },
+  "competition_session": { "id": "…", "title": "Online Qualifying Round", "slug": "online-qualifying-round" },
   "scope": { "school": "Erdem nova" },
   "generated_at": "…",
   "data": [ { "rank": 1, "participant_id": "…", "personal_id": "…", "full_name": "…", "school": "…", "percentage": 95.92, "duration_seconds": 3566 } ]
@@ -416,9 +427,10 @@ Query: `school`, `agency` (exact match), `limit` (default 100, max 500).
 | Field | Type | Default | Notes |
 |---|---|---|---|
 | `participant_id` **or** `personal_id` | uuid / string | — | One is required. `personal_id` match is case-insensitive |
-| `quiz_id` | uuid | — | **Required** |
-| `quiz_version` | `"latest_published"` \| int | `latest_published` | Must be a *published* version |
-| `competition_session_id` | uuid | null | **Strongly recommended.** Validates that the quiz version belongs to the session (`422` otherwise) and produces a session-scoped `start_url`. Required for results to appear under that session in the admin Results/Stats/Top Scorers pages |
+| `session_quiz_set_id` | uuid | — | **Recommended.** One quiz in one session (from `/competition-sessions/{id}/quizzes`). Implies `quiz_id`, `competition_session_id` and the version, so you don't need to send them. If you do send them, they must match it (`422` otherwise) |
+| `quiz_id` | uuid | — | Required unless `session_quiz_set_id` is given |
+| `quiz_version` | `"latest_published"` \| int | `latest_published` | Must be a *published* version. With a session, `latest_published` means the latest version **attached to that session** |
+| `competition_session_id` | uuid | null | Binds the code to a session (implied by `session_quiz_set_id`). Validates that the quiz version belongs to the session (`422` otherwise) and produces a session-scoped `start_url`. Required for results to appear under that session in the admin Results/Stats/Top Scorers pages |
 | `expires_in` | int seconds | `86400` | 60 … 2 592 000 (30 days) |
 | `not_before` | ISO datetime | null | Token cannot be redeemed before this time |
 | `mode` | `solo` \| `live` | `solo` | `live` requires a `live_room_id` |
@@ -426,20 +438,25 @@ Query: `school`, `agency` (exact match), `limit` (default 100, max 500).
 
 `redirect_url` and `create_if_missing` are accepted for forward compatibility but currently have no effect.
 
-Success `201` — see the Quickstart for the full payload. Key fields: `token` (6-digit code), `token_id` (use for status polling), `start_url`, `expires_at`.
+Success `201` — see the Quickstart for the full payload. Key fields: `token` (6-digit code), `token_id` (use for status polling), `competition_session_id`, `session_quiz_set_id`, `start_url`, `expires_at`.
 
-Errors: `400` validation, `403` quiz not in key allow-list, `404` participant / version / session not found, `422` no published version or quiz not in session.
+If the code is **not bound to any session**, the response also contains a warning (the code is still issued):
+
+```json
+"warnings": [ { "code": "no_competition_session", "detail": "This code is not bound to a competition session, …" } ]
+```
+
+Errors: `400` validation, `403` quiz not in key allow-list, `404` participant / version / session / session quiz not found, `422` no published version, quiz not in session, or a mismatch between `session_quiz_set_id` and `quiz_id` / `competition_session_id` / `quiz_version`. `422`/`404` bodies include a machine-readable `code` (`quiz_not_in_session`, `session_mismatch`, `quiz_mismatch`, `version_mismatch`, `quiz_not_published`, `not_found`).
 
 #### `POST /api/v1/sessions/tokens/batch` — `[tokens:write]`
 
 ```json
-{ "tokens": [ { "participant_id": "<uuid>", "quiz_id": "<uuid>", "personal_id": "STU001", "expires_in": 172800 } ] }
+{ "tokens": [ { "participant_id": "<uuid>", "session_quiz_set_id": "<uuid>", "expires_in": 172800 } ] }
 ```
 
-- `participant_id` (Quizzly UUID) and `quiz_id` are required per item; `personal_id` is optional and only used to prefill the `start_url`.
-- Always uses the **latest published** version.
-- Does **not** accept `competition_session_id`; if you need session binding, use the single endpoint in a loop.
-- Max 500 items. Returns `207` with `{ issued, failed, results[] }`; each successful item has `status: "issued"`, `token`, `token_id`, `start_url`, `expires_at`.
+- Per item: `participant_id` (Quizzly UUID, must be in your organisation) plus **either** `session_quiz_set_id` (recommended) **or** `quiz_id` (optionally with `competition_session_id`). `personal_id` is optional and only used to prefill a non-session `start_url`.
+- With a session, the code is bound to it, uses the version attached to that session, and gets a session-scoped `start_url`. Without one, it uses the **latest published** version and the item includes the `no_competition_session` warning.
+- Max 500 items. Returns `207` with `{ issued, failed, results[] }`. Each successful item has `status: "issued"`, `token`, `token_id`, `competition_session_id`, `session_quiz_set_id`, `start_url`, `expires_at`. Failed items carry `error.code`: `missing_required`, `participant_not_found`, `forbidden`, `quiz_not_published`, `quiz_not_in_session`, `session_mismatch`, `quiz_mismatch`, `not_found`, `db_error`.
 
 #### `GET /api/v1/sessions/tokens/{token_id}` — `[tokens:read]` (or `tokens:write`)
 
@@ -493,6 +510,7 @@ List attempts across the org.
 | Query | Notes |
 |---|---|
 | `quiz_id` | Any version of this quiz |
+| `competition_session_id` | Only attempts in this session. **Use this when a quiz is shared by several sessions.** |
 | `state` | `issued` \| `active` \| `submitted` \| `voided` \| `expired` \| `abandoned` |
 | `school`, `agency` | Exact match on participant |
 | `submitted_after`, `submitted_before` | ISO datetime |
@@ -506,6 +524,7 @@ List attempts across the org.
 {
   "data": [ { "session_id": "…", "participant_id": "…",
               "participant": { "personal_id": "…", "full_name": "…", "school": "…", "agency": null },
+              "competition_session": { "id": "…", "title": "Online Qualifying Round", "slug": "online-qualifying-round" },
               "mode": "solo", "state": "submitted",
               "score": { "raw": 94, "max": 98, "percentage": 95.92, "passed": null, "correct": 25, "incorrect": 1, "unanswered": 0 },
               "timing": { "started_at": "…", "submitted_at": "…", "duration_ms": 3566000 },
@@ -516,7 +535,7 @@ List attempts across the org.
 
 #### `GET /api/v1/sessions/{session_id}` — `[results:read]`
 
-One attempt in full, including `quiz`, `timing.time_limit_seconds` and every answer (`question_id`, `selected_option_id`, `numeric_response`, `is_correct`, `points_awarded`, `time_taken_ms`, `revision_count`, `displayed_at`, `answered_at`).
+One attempt in full, including `competition_session` (or `null`), `quiz`, `timing.time_limit_seconds` and every answer (`question_id`, `selected_option_id`, `numeric_response`, `is_correct`, `points_awarded`, `time_taken_ms`, `revision_count`, `displayed_at`, `answered_at`).
 
 #### `POST /api/v1/sessions/{session_id}/void` — `[results:read]` **and** `[tokens:write]`
 
@@ -541,12 +560,12 @@ Invalidate an attempt (e.g. proven misconduct, technical fault). Body is optiona
 2. If `exists` is `true`, show the existing record / offer to update via `POST /participants?upsert=true`; otherwise `POST /participants`.
 
 ### Scheduling a competition
-1. Resolve `competition_session_id` and each `quiz_id` once (steps 2–3 of the Quickstart) and cache them.
-2. For each participant × quiz, `POST /sessions/tokens` with `competition_session_id`, a sensible `expires_in` (cover the whole competition window) and, if needed, `not_before` set to the opening time so links can be distributed early but not used early.
+1. Resolve each participant's **own** session and the `session_quiz_set_id` of each quiz in it (steps 2–3 of the Quickstart), and cache them.
+2. For each participant × session quiz, `POST /sessions/tokens` with `session_quiz_set_id` — once, for their session only — a sensible `expires_in` (cover the whole competition window) and, if needed, `not_before` set to the opening time so links can be distributed early but not used early.
 3. Store `token_id` ↔ participant ↔ quiz in your database.
 
 ### Result collection
-- **Push-style is not available (no webhooks yet).** Poll `GET /sessions?quiz_id=…&state=submitted&submitted_after=<last_sync>` on an interval; paginate with `cursor`.
+- **Push-style is not available (no webhooks yet).** Poll `GET /sessions?competition_session_id=…&quiz_id=…&state=submitted&submitted_after=<last_sync>` on an interval; paginate with `cursor`.
 - Or poll `GET /sessions/tokens/{token_id}` per outstanding token — fine for small cohorts.
 - Detect no-shows: tokens whose `status` is still `active` after `expires_at` become `expired`; tokens `redeemed` but whose `session.state` never reaches `submitted` were abandoned mid-attempt.
 

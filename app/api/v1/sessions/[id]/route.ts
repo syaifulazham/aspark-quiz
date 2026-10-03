@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyApiKey } from "@/lib/auth/api-key";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { competitionSessionEmbed, competitionSessionOf } from "@/lib/tokens/competition-session-of";
 
 export async function GET(
   request: NextRequest,
@@ -27,7 +28,7 @@ export async function GET(
   // Fetch session with participant info
   const { data: session, error } = await supabase
     .from("quiz_sessions")
-    .select("*, participants(personal_id, full_name, school, agency)")
+    .select(`*, participants(personal_id, full_name, school, agency), ${competitionSessionEmbed(false)}`)
     .eq("id", id)
     .eq("org_id", ctx.orgId)
     .single();
@@ -71,6 +72,7 @@ export async function GET(
     session_id: s.id,
     participant_id: s.participant_id,
     participant: s.participants,
+    competition_session: competitionSessionOf(s),
     quiz: quizInfo,
     mode: s.mode,
     state: s.state,
