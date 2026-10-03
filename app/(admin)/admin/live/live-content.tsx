@@ -5,6 +5,7 @@ interface Props {
   orgId: string;
   sessionId: string;
   quizVersionId: string;
+  country: string | null;
   canManage: boolean;
 }
 
@@ -41,8 +42,8 @@ function StatCard({
   );
 }
 
-export async function LiveContent({ orgId, sessionId, quizVersionId, canManage }: Props) {
-  const { stats, rows } = await getLiveData(orgId, sessionId, quizVersionId);
+export async function LiveContent({ orgId, sessionId, quizVersionId, country, canManage }: Props) {
+  const { stats, rows } = await getLiveData(orgId, sessionId, quizVersionId, country);
   const ofIssued = (n: number) => (stats.issued ? n / stats.issued : 0);
 
   return (

@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { deriveTokenStatus } from "@/lib/auth/token-status";
+import { normalizeCountry } from "./country";
 
 export type LiveTokenStatus = "valid" | "not_yet_valid" | "used" | "expired" | "revoked";
 export type AttemptState = "not_started" | "logged_in" | "in_progress" | "submitted" | "voided";
@@ -88,10 +89,17 @@ function attemptState(a: AttemptRow | null): AttemptState {
   }
 }
 
-export async function getLiveData(orgId: string, sessionId: string, quizVersionId: string) {
+const countryOf = (t: TokenRow) => normalizeCountry(t.participant?.nationality);
+
+export async function getLiveData(
+  orgId: string,
+  sessionId: string,
+  quizVersionId: string,
+  country: string | null = null
+) {
   const supabase = createAdminClient();
 
-  const [tokens, { count: questionCount }] = await Promise.all([
+  const [allTokens, { count: questionCount }] = await Promise.all([
     (async () => {
       const rows: TokenRow[] = [];
       for (let from = 0; ; from += PAGE) {
@@ -117,6 +125,8 @@ export async function getLiveData(orgId: string, sessionId: string, quizVersionI
       .select("*", { count: "exact", head: true })
       .eq("quiz_version_id", quizVersionId),
   ]);
+
+  const tokens = country ? allTokens.filter((t) => countryOf(t) === country) : allTokens;
 
   const now = new Date();
   const stats: LiveStats = { registered: 0, issued: tokens.length, valid: 0, used: 0, expired: 0, inProgress: 0, submitted: 0 };
