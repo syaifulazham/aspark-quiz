@@ -1,10 +1,11 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Check, Copy, KeyRound, Loader2, RotateCw, Search } from "lucide-react";
+import { Check, Copy, FileText, KeyRound, Loader2, RotateCw, Search } from "lucide-react";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -21,6 +22,7 @@ interface Props {
   rows: LiveRow[];
   competitionSessionId: string;
   quizVersionId: string;
+  country: string | null;
   canManage: boolean;
 }
 
@@ -102,8 +104,17 @@ function confirmText(row: LiveRow) {
   return "A new code will be issued, valid until the session closes.";
 }
 
-export function ParticipantsTable({ rows, competitionSessionId, quizVersionId, canManage }: Props) {
+export function ParticipantsTable({ rows, competitionSessionId, quizVersionId, country, canManage }: Props) {
   const router = useRouter();
+
+  function reportHref(extra: Record<string, string> = {}) {
+    const p = new URLSearchParams({ session: competitionSessionId, quiz: quizVersionId });
+    if (country) p.set("country", country);
+    for (const [k, v] of Object.entries(extra)) p.set(k, v);
+    return `/admin/live/report?${p}`;
+  }
+  const submittedCount = rows.filter((r) => r.attemptState === "submitted").length;
+  const exportTitle = canManage ? undefined : "Only owners and admins can export answer scripts";
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [target, setTarget] = useState<LiveRow | null>(null);
@@ -185,14 +196,32 @@ export function ParticipantsTable({ rows, competitionSessionId, quizVersionId, c
             Sorted by name · showing {visible.length} of {rows.length}
           </p>
         </div>
-        <div className="relative w-full max-w-xs">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Filter by name, ID, school…"
-            className="h-8 w-full rounded-lg border border-input bg-transparent pl-8 pr-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-          />
+        <div className="flex w-full items-center gap-2 sm:w-auto">
+          <div className="relative w-full max-w-xs sm:w-64">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Filter by name, ID, school…"
+              className="h-8 w-full rounded-lg border border-input bg-transparent pl-8 pr-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+            />
+          </div>
+          {canManage && submittedCount > 0 ? (
+            <Link
+              href={reportHref()}
+              target="_blank"
+              className={cn(buttonVariants({ variant: "outline", size: "sm" }), "shrink-0")}
+              title="Answer scripts for everyone who submitted, ready to print or save as PDF"
+            >
+              <FileText />
+              Answer scripts ({submittedCount})
+            </Link>
+          ) : (
+            <Button variant="outline" size="sm" className="shrink-0" disabled title={exportTitle ?? "Nobody has submitted yet"}>
+              <FileText />
+              Answer scripts
+            </Button>
+          )}
         </div>
         <div className="flex w-full flex-wrap gap-1.5">
           {FILTERS.map((f) => (
@@ -264,19 +293,42 @@ export function ParticipantsTable({ rows, competitionSessionId, quizVersionId, c
                     </td>
                     <td className={`${td} whitespace-nowrap text-xs text-muted-foreground`}>{fmtTime(r.endedAt)}</td>
                     <td className={`${td} text-right`}>
-                      <Button
-                        variant={r.tokenStatus === "expired" || r.tokenStatus === "revoked" ? "default" : "outline"}
-                        size="sm"
-                        disabled={!canManage}
-                        title={canManage ? undefined : "Only owners and admins can generate tokens"}
-                        onClick={() => {
-                          setResult(null);
-                          setTarget(r);
-                        }}
-                      >
-                        {r.tokenStatus === "expired" || r.tokenStatus === "revoked" ? <KeyRound /> : <RotateCw />}
-                        {r.tokenStatus === "expired" || r.tokenStatus === "revoked" ? "Generate" : "Regenerate"}
-                      </Button>
+                      <div className="inline-flex items-center gap-1.5">
+                        {canManage && r.attemptId ? (
+                          <Link
+                            href={reportHref({ participant: r.participantId })}
+                            target="_blank"
+                            className={buttonVariants({ variant: "ghost", size: "icon-sm" })}
+                            title="Answer script (print or save as PDF)"
+                            aria-label={`Answer script for ${r.fullName}`}
+                          >
+                            <FileText />
+                          </Link>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            disabled
+                            title={exportTitle ?? "No answers yet"}
+                            aria-label="Answer script unavailable"
+                          >
+                            <FileText />
+                          </Button>
+                        )}
+                        <Button
+                          variant={r.tokenStatus === "expired" || r.tokenStatus === "revoked" ? "default" : "outline"}
+                          size="sm"
+                          disabled={!canManage}
+                          title={canManage ? undefined : "Only owners and admins can generate tokens"}
+                          onClick={() => {
+                            setResult(null);
+                            setTarget(r);
+                          }}
+                        >
+                          {r.tokenStatus === "expired" || r.tokenStatus === "revoked" ? <KeyRound /> : <RotateCw />}
+                          {r.tokenStatus === "expired" || r.tokenStatus === "revoked" ? "Generate" : "Regenerate"}
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 );

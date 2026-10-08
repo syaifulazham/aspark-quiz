@@ -87,6 +87,7 @@ export async function LiveContent({ orgId, sessionId, quizVersionId, country, ca
         rows={rows}
         competitionSessionId={sessionId}
         quizVersionId={quizVersionId}
+        country={country}
         canManage={canManage}
       />
     </>

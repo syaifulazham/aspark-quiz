@@ -7,6 +7,8 @@ export type AttemptState = "not_started" | "logged_in" | "in_progress" | "submit
 
 export interface LiveRow {
   participantId: string;
+  /** The attempt shown for this participant (the submitted one, else the newest), if any. */
+  attemptId: string | null;
   fullName: string;
   personalId: string;
   grade: string | null;
@@ -161,6 +163,7 @@ export async function getLiveData(
     const p = current.participant;
     rows.push({
       participantId,
+      attemptId: attempt?.id ?? null,
       fullName: p?.full_name ?? "Unknown",
       personalId: p?.personal_id ?? "",
       grade: p?.grade ?? null,
