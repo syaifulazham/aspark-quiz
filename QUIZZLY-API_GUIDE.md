@@ -385,6 +385,52 @@ Pass `session_quiz_set_id` when issuing tokens. It identifies this quiz **in thi
 
 ---
 
+#### `POST /api/v1/competition-sessions/{id}/progress` — `[results:read]` **and** `[tokens:read]` (or `tokens:write`)
+
+Per-participant progress in one competition session: how many login codes each participant holds for a quiz, the state of the code that matters, and how far their attempt has got. Built for partner dashboards — "how many of my students were given a code, and how many have answered" — and computed with the same rules as the admin **Live** page, so the two always agree.
+
+```json
+{ "quiz_id": "<uuid>", "personal_ids": ["150917070582", "STU001"] }
+```
+
+| Field | Notes |
+|---|---|
+| `quiz_id` **or** `session_quiz_set_id` | Scope to one quiz in this session. Omit to cover **every** quiz in the session for the listed participants |
+| `personal_ids` | Matched case-insensitively, like token issuance |
+| `participant_ids` | Quizzly UUIDs |
+
+At least one of a quiz scope or a participant list is required — an unbounded whole-session read is not offered; page by quiz instead. Max 500 ids per request; duplicates collapse.
+
+```json
+{
+  "competition_session": { "id": "…", "title": "Online Qualifying Round", "slug": "online-qualifying-round" },
+  "summary": { "participants": 52, "tokens_issued": 94, "tokens_active": 0, "tokens_redeemed": 7,
+               "tokens_expired": 85, "tokens_revoked": 0,
+               "not_started": 45, "logged_in": 1, "in_progress": 2, "submitted": 4, "voided": 0 },
+  "data": [ {
+    "participant":   { "id": "…", "personal_id": "150917070582", "full_name": "…", "grade": "Darjah 5", "school": "…" },
+    "quiz":          { "id": "…", "title": "Mathematics Grade 5", "version": 1, "session_quiz_set_id": "…" },
+    "tokens":        { "issued": 2, "active": 0, "not_yet_valid": 0, "redeemed": 1, "expired": 1, "revoked": 0 },
+    "current_token": { "token_id": "…", "status": "redeemed", "expires_at": "…" },
+    "attempt":       { "session_id": "…", "progress": "submitted", "started_at": "…", "submitted_at": "…",
+                       "deadline_at": "…", "answered": 26, "total_questions": 26 }
+  } ],
+  "without_tokens": ["STU001"],
+  "not_found": []
+}
+```
+
+- One row per **(participant, quiz)**. A participant sitting several quizzes in the session gets several rows.
+- `current_token` is the code that matters: a usable one first, else one they used, else the newest. `status` uses the token vocabulary of `GET /sessions/tokens/{id}`.
+- `attempt.progress` ∈ `not_started` | `logged_in` (code redeemed, no question answered yet) | `in_progress` | `submitted` | `voided`. When a participant has several attempts, the submitted one is shown, else the newest.
+- `without_tokens` — listed participants who exist but hold no code for these quizzes in this session. `not_found` — ids unknown to this organisation.
+- **Neither the login code nor a score is returned.** A code is a credential and this feeds teacher-facing screens; scores stay with `GET /sessions`.
+- Errors: `400` validation, `401`, `403` missing scope, `404` unknown session, `422` (`code: quiz_not_in_session`).
+
+`GET /api/v1/competition-sessions/{id}/progress?quiz_id=…&personal_id=…` is the single-participant form of the same call.
+
+---
+
 ### 6.4 Quizzes
 
 #### `GET /api/v1/quizzes` — `[quizzes:read]`

@@ -1,9 +1,11 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { deriveTokenStatus } from "@/lib/auth/token-status";
+import { summariseParticipant, type ProgressAttemptRow, type ProgressTokenRow } from "@/lib/progress";
 import { normalizeCountry } from "./country";
 
-export type LiveTokenStatus = "valid" | "not_yet_valid" | "used" | "expired" | "revoked";
-export type AttemptState = "not_started" | "logged_in" | "in_progress" | "submitted" | "voided";
+// The per-participant rules live in lib/progress so the v1 progress API
+// reports exactly what this page shows.
+export type { LiveTokenStatus, AttemptState } from "@/lib/progress";
+import type { LiveTokenStatus, AttemptState } from "@/lib/progress";
 
 export interface LiveRow {
   participantId: string;
@@ -37,27 +39,9 @@ export interface LiveStats {
   submitted: number;
 }
 
-interface AttemptRow {
-  id: string;
-  state: string;
-  created_at: string;
-  started_at: string | null;
-  deadline_at: string | null;
-  submitted_at: string | null;
-  percentage: number | string | null;
-  question_order: string[] | null;
-  session_answers: Array<{ count: number }> | null;
-}
-
-interface TokenRow {
-  id: string;
+interface TokenRow extends ProgressTokenRow {
   participant_id: string;
   token_prefix: string;
-  created_at: string;
-  expires_at: string;
-  not_before: string | null;
-  redeemed_at: string | null;
-  revoked_at: string | null;
   participant: {
     full_name: string;
     personal_id: string;
@@ -65,31 +49,10 @@ interface TokenRow {
     school: string | null;
     nationality: string | null;
   } | null;
-  quiz_sessions: AttemptRow | AttemptRow[] | null;
+  quiz_sessions: ProgressAttemptRow | ProgressAttemptRow[] | null;
 }
 
 const PAGE = 1000;
-
-function liveStatus(t: TokenRow, now: Date): LiveTokenStatus {
-  const s = deriveTokenStatus(t, now);
-  if (s === "redeemed") return "used";
-  if (s === "active") return "valid";
-  return s;
-}
-
-function attemptState(a: AttemptRow | null): AttemptState {
-  if (!a) return "not_started";
-  switch (a.state) {
-    case "submitted":
-      return "submitted";
-    case "active":
-      return "in_progress";
-    case "voided":
-      return "voided";
-    default:
-      return "logged_in";
-  }
-}
 
 const countryOf = (t: TokenRow) => normalizeCountry(t.participant?.nationality);
 
@@ -135,10 +98,6 @@ export async function getLiveData(
   const byParticipant = new Map<string, TokenRow[]>();
 
   for (const t of tokens) {
-    const s = liveStatus(t, now);
-    if (s === "valid" || s === "not_yet_valid") stats.valid++;
-    else if (s === "used") stats.used++;
-    else if (s === "expired") stats.expired++;
     const list = byParticipant.get(t.participant_id) ?? [];
     list.push(t); // already newest first
     byParticipant.set(t.participant_id, list);
@@ -146,20 +105,14 @@ export async function getLiveData(
 
   const rows: LiveRow[] = [];
   for (const [participantId, list] of byParticipant) {
-    // The code that matters: a usable one first, else one they used, else the newest (list is newest first)
-    const rank: Record<LiveTokenStatus, number> = { valid: 0, not_yet_valid: 0, used: 1, expired: 2, revoked: 3 };
-    const current = list.reduce((best, t) =>
-      rank[liveStatus(t, now)] < rank[liveStatus(best, now)] ? t : best
-    );
-    const attempts = list
-      .flatMap((t) => (Array.isArray(t.quiz_sessions) ? t.quiz_sessions : t.quiz_sessions ? [t.quiz_sessions] : []))
-      .sort((a, b) => b.created_at.localeCompare(a.created_at));
-    const attempt = attempts.find((a) => a.state === "submitted") ?? attempts[0] ?? null;
-    const state = attemptState(attempt);
-    if (state === "in_progress") stats.inProgress++;
-    if (state === "submitted") stats.submitted++;
+    const s = summariseParticipant(list, questionCount ?? 0, now);
+    stats.valid   += s.tokens.valid + s.tokens.not_yet_valid; // the page has always grouped these
+    stats.used    += s.tokens.used;
+    stats.expired += s.tokens.expired;
+    if (s.state === "in_progress") stats.inProgress++;
+    if (s.state === "submitted") stats.submitted++;
 
-    const total = attempt?.question_order?.length || questionCount || 0;
+    const { current, attempt } = s;
     const p = current.participant;
     rows.push({
       participantId,
@@ -169,16 +122,16 @@ export async function getLiveData(
       grade: p?.grade ?? null,
       school: p?.school ?? null,
       country: p?.nationality ?? null,
-      tokenStatus: liveStatus(current, now),
+      tokenStatus: s.currentStatus,
       code: current.token_prefix,
       tokenExpiresAt: current.expires_at,
-      tokenCount: list.length,
-      attemptState: state,
+      tokenCount: s.tokens.issued,
+      attemptState: s.state,
       startedAt: attempt?.started_at ?? null,
       endedAt: attempt?.submitted_at ?? null,
       deadlineAt: attempt?.deadline_at ?? null,
-      answered: Math.min(attempt?.session_answers?.[0]?.count ?? 0, total || Infinity),
-      totalQuestions: total,
+      answered: s.answered,
+      totalQuestions: s.totalQuestions,
       percentage: attempt?.percentage != null ? Number(attempt.percentage) : null,
     });
   }
