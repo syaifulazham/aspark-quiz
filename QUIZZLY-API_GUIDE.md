@@ -273,7 +273,7 @@ The response is always `200` for a valid request — branch on `exists`:
 { "exists": false, "matched_by": "personal_id", "participant": null }
 ```
 
-`400` if zero or more than one lookup parameter is supplied. Typical uses: pre-flight before `POST /participants` to avoid `409`s, or resolving a `personal_id` to the Quizzly `id` required by `/sessions/tokens/batch` and `/participants/{id}/results`.
+`400` if zero or more than one lookup parameter is supplied. Typical uses: pre-flight before `POST /participants` to avoid `409`s, or resolving a `personal_id` to the Quizzly `id` required by `/sessions/tokens/batch`. (`/participants/{id}/results` accepts a `personal_id` directly.)
 
 #### `GET /api/v1/participants` — `[participants:read]`
 
@@ -331,9 +331,24 @@ Per-item `status` is `created` / `updated` / `failed`; failures carry `error: { 
 
 #### `GET /api/v1/participants/{id}/results` — `[results:read]`
 
-All **submitted** attempts for one participant (`{id}` is the Quizzly UUID).
+All **submitted** attempts for one participant.
 
-Query: `quiz_id` (filter to one quiz), `competition_session_id` (only attempts in that session), `include=answers` (attach per-question answers).
+**`{id}`** is either the Quizzly participant UUID **or your own `personal_id`** (case-insensitive, matched literally; URL-encode it, e.g. `Nur%20Aina`). A UUID-shaped value is tried as a Quizzly id first, then as a `personal_id`.
+
+| Query | Notes |
+|---|---|
+| `session_quiz_set_id` | **One quiz within one session** (from `/competition-sessions/{id}/quizzes`). Returns only attempts at exactly that session quiz. Recommended. |
+| `competition_session_id` | Only attempts in that session. May be combined with `session_quiz_set_id`, but must match it. |
+| `quiz_id` | Only attempts at any version of this quiz. May be combined with `session_quiz_set_id`, but must match it. |
+| `include=answers` | Attach per-question answers. |
+
+**Result for one participant in one session quiz** — the most common call:
+
+```http
+GET /api/v1/participants/STU001/results?session_quiz_set_id=<uuid>
+```
+
+`data` holds that participant's submitted attempt(s) at that session quiz — normally one — or is empty if they haven't submitted yet. To see whether they have a code / have started, use `GET /api/v1/competition-sessions/{id}/progress?session_quiz_set_id=…&personal_id=…`.
 
 ```json
 {
@@ -343,6 +358,7 @@ Query: `quiz_id` (filter to one quiz), `competition_session_id` (only attempts i
     {
       "session_id": "…",
       "competition_session": { "id": "…", "title": "Online Qualifying Round", "slug": "online-qualifying-round" },
+      "session_quiz_set_id": "…",
       "quiz": { "id": "…", "title": "Mathematics Grade 5", "version": 1 },
       "mode": "solo",
       "state": "submitted",
@@ -354,6 +370,18 @@ Query: `quiz_id` (filter to one quiz), `competition_session_id` (only attempts i
   ]
 }
 ```
+
+`summary` covers the attempts returned (i.e. after filters). `session_quiz_set_id` is `null` for attempts not bound to a session.
+
+Errors:
+
+| Status | When |
+|---|---|
+| `400` | `quiz_id`, `competition_session_id` or `session_quiz_set_id` is not a uuid |
+| `404` | Participant not found (by UUID or `personal_id`); `session_quiz_set_id` not in your organisation; `quiz_id` not in your organisation |
+| `422` | `session_quiz_set_id` disagrees with `competition_session_id` (`code: "session_mismatch"`) or `quiz_id` (`code: "quiz_mismatch"`) |
+
+> Change on 23 Oct 2026: an unknown `quiz_id` now returns `404`. Previously the filter was silently ignored and every quiz was returned.
 
 ---
 
@@ -599,7 +627,7 @@ Invalidate an attempt (e.g. proven misconduct, technical fault). Body is optiona
 
 ### Idempotent nightly sync of participants
 1. `POST /participants/batch` with `"upsert": true` in chunks of ≤ 500.
-2. Persist the returned `id` per `personal_id`; you will need the UUID for batch token issuance and for `/participants/{id}/results`. If you lose the mapping, `GET /participants/lookup?personal_id=…` recovers it.
+2. Persist the returned `id` per `personal_id`; you will need the UUID for batch token issuance. If you lose the mapping, `GET /participants/lookup?personal_id=…` recovers it.
 
 ### Registration form with duplicate detection
 1. When a user submits your form, call `GET /participants/lookup?personal_id=…` (or `?email=…`).
@@ -613,6 +641,7 @@ Invalidate an attempt (e.g. proven misconduct, technical fault). Body is optiona
 ### Result collection
 - **Push-style is not available (no webhooks yet).** Poll `GET /sessions?competition_session_id=…&quiz_id=…&state=submitted&submitted_after=<last_sync>` on an interval; paginate with `cursor`.
 - Or poll `GET /sessions/tokens/{token_id}` per outstanding token — fine for small cohorts.
+- For one student's result in one session quiz: `GET /participants/{personal_id}/results?session_quiz_set_id=…`.
 - Detect no-shows: tokens whose `status` is still `active` after `expires_at` become `expired`; tokens `redeemed` but whose `session.state` never reaches `submitted` were abandoned mid-attempt.
 
 ### Re-issuing a login
