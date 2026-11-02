@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const MAX_PARTICIPANT_HITS = 100;
+const ROW_PAGE = 1000; // PostgREST's per-request row limit
 const MAX_TERMS = 6;
 
 export interface ParticipantRow {
@@ -128,17 +129,24 @@ export async function searchSchools(orgId: string, q: string) {
   if (patterns.length === 0) return [];
 
   const supabase = createAdminClient();
-  let query = supabase
-    .from("participants")
-    .select("school, nationality")
-    .eq("org_id", orgId)
-    .not("school", "is", null);
-  for (const p of patterns) query = query.ilike("school", p);
-  const { data, error } = await query.limit(5000);
-  if (error) throw new Error(error.message);
+  const matches: Array<{ school: string | null; nationality: string | null }> = [];
+  // Read every page: one request stops silently at the server's 1000-row limit
+  for (let from = 0; ; from += ROW_PAGE) {
+    let query = supabase
+      .from("participants")
+      .select("id, school, nationality")
+      .eq("org_id", orgId)
+      .not("school", "is", null);
+    for (const p of patterns) query = query.ilike("school", p);
+    const { data, error } = await query.order("id").range(from, from + ROW_PAGE - 1);
+    if (error) throw new Error(error.message);
+    const batch = (data ?? []) as Array<{ school: string | null; nationality: string | null }>;
+    matches.push(...batch);
+    if (batch.length < ROW_PAGE) break;
+  }
 
   const bySchool = new Map<string, { count: number; countries: Set<string> }>();
-  for (const r of (data ?? []) as Array<{ school: string | null; nationality: string | null }>) {
+  for (const r of matches) {
     const name = r.school?.trim();
     if (!name) continue;
     const entry = bySchool.get(name) ?? { count: 0, countries: new Set<string>() };
@@ -164,15 +172,22 @@ export async function getParticipant(orgId: string, id: string) {
 
 export async function getSchoolParticipants(orgId: string, school: string) {
   const supabase = createAdminClient();
-  const { data, error } = await supabase
-    .from("participants")
-    .select(PARTICIPANT_COLUMNS)
-    .eq("org_id", orgId)
-    .eq("school", school)
-    .order("full_name", { ascending: true })
-    .limit(2000);
-  if (error) throw new Error(error.message);
-  return (data ?? []) as unknown as ParticipantRow[];
+  const rows: ParticipantRow[] = [];
+  for (let from = 0; ; from += ROW_PAGE) {
+    const { data, error } = await supabase
+      .from("participants")
+      .select(PARTICIPANT_COLUMNS)
+      .eq("org_id", orgId)
+      .eq("school", school)
+      .order("full_name", { ascending: true })
+      .order("id", { ascending: true })
+      .range(from, from + ROW_PAGE - 1);
+    if (error) throw new Error(error.message);
+    const batch = (data ?? []) as unknown as ParticipantRow[];
+    rows.push(...batch);
+    if (batch.length < ROW_PAGE) break;
+  }
+  return rows;
 }
 
 interface TokenRow {

@@ -3,6 +3,7 @@
 import { useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
+import { countryLabel } from "@/lib/country";
 import {
   Select,
   SelectContent,
@@ -68,16 +69,16 @@ export function StatsFilter({ sessions, countries }: Props) {
           onValueChange={(v) => updateParams({ country: !v || v === ALL ? "" : v })}
           disabled={!sessionId}
         >
-          <SelectTrigger className="w-48">
+          <SelectTrigger className="w-60">
             <SelectValue placeholder="Countries">
-              {(v: string | null) => (!v || v === ALL ? "All countries" : v)}
+              {(v: string | null) => (!v || v === ALL ? "All countries" : countryLabel(v))}
             </SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value={ALL}>All countries</SelectItem>
             {countries.map((c) => (
               <SelectItem key={c} value={c}>
-                {c}
+                {countryLabel(c)}
               </SelectItem>
             ))}
           </SelectContent>

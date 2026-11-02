@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
+import { countryLabel } from "@/lib/country";
 import {
   Select,
   SelectContent,
@@ -67,7 +68,9 @@ export function ResultsFilter({ sessions, quizzes, schools, grades, countries, g
     value: string,
     param: "school" | "grade" | "country" | "gender",
     placeholder: string,
-    options: string[]
+    options: string[],
+    label: (value: string) => string = (v) => v,
+    width = "w-48"
   ) {
     if (options.length === 0) return null;
     return (
@@ -77,16 +80,16 @@ export function ResultsFilter({ sessions, quizzes, schools, grades, countries, g
           updateParams({ [param]: !v || v === ALL ? "" : v })
         }
       >
-        <SelectTrigger className="w-48">
+        <SelectTrigger className={width}>
           <SelectValue placeholder={placeholder}>
-            {(v: string | null) => (!v || v === ALL ? `All ${placeholder.toLowerCase()}` : v)}
+            {(v: string | null) => (!v || v === ALL ? `All ${placeholder.toLowerCase()}` : label(v))}
           </SelectValue>
         </SelectTrigger>
         <SelectContent>
           <SelectItem value={ALL}>All {placeholder.toLowerCase()}</SelectItem>
           {options.map((o) => (
             <SelectItem key={o} value={o}>
-              {o}
+              {label(o)}
             </SelectItem>
           ))}
         </SelectContent>
@@ -133,7 +136,7 @@ export function ResultsFilter({ sessions, quizzes, schools, grades, countries, g
         </SelectContent>
       </Select>
 
-      {renderConditionSelect(country, "country", "Countries", countries)}
+      {renderConditionSelect(country, "country", "Countries", countries, countryLabel, "w-60")}
       {renderConditionSelect(school, "school", "Schools", schools)}
       {renderConditionSelect(grade, "grade", "Grades", grades)}
       {renderConditionSelect(gender, "gender", "Genders", genders)}

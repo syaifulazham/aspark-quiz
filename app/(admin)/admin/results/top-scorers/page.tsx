@@ -7,6 +7,7 @@ import { TopScorersGrid } from "./top-scorers-grid";
 import { TopScorersSkeleton } from "./top-scorers-skeleton";
 import { COUNTRIES_PARAM, parseCountries } from "./params";
 import { ExportButton } from "./export-button";
+import { loadParticipantFacets } from "@/lib/participant-facets";
 
 interface Props {
   searchParams: Promise<{ session?: string; [COUNTRIES_PARAM]?: string }>;
@@ -36,26 +37,18 @@ export default async function TopScorersPage({ searchParams }: Props) {
     .single();
   const orgId = (profile as unknown as { org_id: string } | null)?.org_id;
 
-  const [{ data: sessionRows }, { data: participantRows }] = await Promise.all([
+  const [{ data: sessionRows }, facets] = await Promise.all([
     supabase
       .from("competition_sessions")
       .select("id, title")
       .order("created_at", { ascending: false }),
-    orgId
-      ? supabase.from("participants").select("nationality").eq("org_id", orgId)
-      : Promise.resolve({ data: [] }),
+    orgId ? loadParticipantFacets(supabase, orgId, ["nationality"]) : Promise.resolve({ nationality: [] }),
   ]);
 
   const sessions = (sessionRows ?? []) as unknown as CompetitionSessionRow[];
   const selectedSession = sessions.find((s) => s.id === sessionId) ?? null;
 
-  const countryOptions = [
-    ...new Set(
-      ((participantRows ?? []) as unknown as Array<{ nationality: string | null }>)
-        .map((r) => r.nationality)
-        .filter((v): v is string => !!v && v.trim() !== "")
-    ),
-  ].sort();
+  const countryOptions = facets.nationality;
 
   // Only keep known countries so a stale URL can't inject arbitrary filter values
   const countries = parseCountries(params[COUNTRIES_PARAM]).filter((c) =>

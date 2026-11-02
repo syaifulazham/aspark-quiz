@@ -2,6 +2,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { notFound } from "next/navigation";
 import { ResultsFilter } from "./results-client";
+import { loadParticipantFacets } from "@/lib/participant-facets";
 
 interface Props {
   searchParams: Promise<{
@@ -78,22 +79,10 @@ export default async function ResultsPage({ searchParams }: Props) {
   let gradeOptions: string[] = [];
   let countryOptions: string[] = [];
   if (orgId) {
-    const { data: participantRows } = await supabase
-      .from("participants")
-      .select("school, grade, nationality")
-      .eq("org_id", orgId);
-
-    const rows = (participantRows ?? []) as unknown as Array<{
-      school: string | null;
-      grade: string | null;
-      nationality: string | null;
-    }>;
-    const distinct = (vals: Array<string | null>) =>
-      [...new Set(vals.filter((v): v is string => !!v && v.trim() !== ""))].sort();
-
-    schoolOptions = distinct(rows.map((r) => r.school));
-    gradeOptions = distinct(rows.map((r) => r.grade));
-    countryOptions = distinct(rows.map((r) => r.nationality));
+    const facets = await loadParticipantFacets(supabase, orgId, ["school", "grade", "nationality"]);
+    schoolOptions = facets.school;
+    gradeOptions = facets.grade;
+    countryOptions = facets.nationality;
   }
 
   // All competition sessions for the selector

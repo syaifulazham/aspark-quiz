@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { COUNTRIES_PARAM, parseCountries } from "./params";
+import { countryLabel } from "@/lib/country";
 
 interface SessionOption {
   id: string;
@@ -54,12 +55,14 @@ export function TopScorersFilter({ sessions, countries }: Props) {
     navigate({ countries: countries.filter((x) => set.has(x)) });
   }
 
-  const countryLabel =
+  const triggerLabel =
     selected.length === 0
       ? "All countries"
-      : selected.length <= 3
-        ? selected.join(", ")
-        : `${selected.length} countries`;
+      : selected.length === 1
+        ? countryLabel(selected[0]!)
+        : selected.length <= 3
+          ? selected.join(", ")
+          : `${selected.length} countries`;
 
   return (
     <div className="flex flex-wrap items-center gap-3">
@@ -85,15 +88,15 @@ export function TopScorersFilter({ sessions, countries }: Props) {
         <DropdownMenu>
           <DropdownMenuTrigger
             disabled={!sessionId}
-            render={<Button variant="outline" className="w-56 justify-between font-normal" />}
+            render={<Button variant="outline" className="w-64 justify-between font-normal" />}
           >
             <span className="flex items-center gap-1.5 truncate">
               <Globe className="size-4 text-muted-foreground" />
-              <span className="truncate">{countryLabel}</span>
+              <span className="truncate">{triggerLabel}</span>
             </span>
             <ChevronDownIcon className="size-4 text-muted-foreground" />
           </DropdownMenuTrigger>
-          <DropdownMenuContent className="w-56">
+          <DropdownMenuContent className="w-64">
             {countries.map((c) => (
               <DropdownMenuCheckboxItem
                 key={c}
@@ -101,7 +104,7 @@ export function TopScorersFilter({ sessions, countries }: Props) {
                 onCheckedChange={(checked) => toggleCountry(c, checked)}
                 closeOnClick={false}
               >
-                {c}
+                {countryLabel(c)}
               </DropdownMenuCheckboxItem>
             ))}
             {selected.length > 0 && (
