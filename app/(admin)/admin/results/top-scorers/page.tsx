@@ -6,6 +6,7 @@ import { TopScorersFilter } from "./top-scorers-client";
 import { TopScorersGrid } from "./top-scorers-grid";
 import { TopScorersSkeleton } from "./top-scorers-skeleton";
 import { COUNTRIES_PARAM, parseCountries } from "./params";
+import { ExportButton } from "./export-button";
 
 interface Props {
   searchParams: Promise<{ session?: string; [COUNTRIES_PARAM]?: string }>;
@@ -75,15 +76,18 @@ export default async function TopScorersPage({ searchParams }: Props) {
       </div>
 
       {selectedSession && (
-        <h2 className="mt-6 font-display text-xl font-semibold tracking-tight">
-          {selectedSession.title}
-          {countries.length > 0 && (
-            <>
-              <span className="mx-2 text-muted-foreground">›</span>
-              {countries.join(", ")}
-            </>
-          )}
-        </h2>
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="font-display text-xl font-semibold tracking-tight">
+            {selectedSession.title}
+            {countries.length > 0 && (
+              <>
+                <span className="mx-2 text-muted-foreground">›</span>
+                {countries.join(", ")}
+              </>
+            )}
+          </h2>
+          {countries.length > 0 && <ExportButton sessionId={selectedSession.id} countries={countries} />}
+        </div>
       )}
 
       {selectedSession ? (

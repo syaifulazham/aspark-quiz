@@ -23,6 +23,7 @@
     "@types/katex": "^0.16.8",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "exceljs": "4.4.0",
     "jose": "^6.0.11",
     "katex": "^0.18.1",
     "lucide-react": "^0.511.0",
