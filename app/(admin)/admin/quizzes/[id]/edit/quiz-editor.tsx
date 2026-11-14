@@ -28,7 +28,7 @@ import { validateAndPublish } from "@/lib/actions/publish";
 import { KaTeXRenderer } from "@/components/katex-renderer";
 import { MathEditor } from "@/components/math-editor";
 import { cn } from "@/lib/utils";
-import { AIGenerateModal } from "./ai-generate-modal";
+import { AIGenerateModal, type GeneratedQuestion } from "./ai-generate-modal";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -151,18 +151,11 @@ export function QuizEditor({ quiz, version, questions: initialQuestions }: Props
     }, delay);
   }
 
-  function handleAIGenerated(
-    generated: Array<{
-      kind: "mcq_single" | "mcq_multi";
-      stem: string;
-      options: Array<{ label: string; is_correct: boolean; position: number }>;
-      explanation: string | null;
-      points: number;
-    }>
-  ) {
+  function handleAIGenerated(generated: GeneratedQuestion[]) {
     // Save each generated question to the database
     startTransition(async () => {
       const newQuestions = [...questions];
+      let failedImages = 0;
       for (const gq of generated) {
         const result = await addQuestion(quiz.id, {
           quiz_version_id: version.id,
@@ -173,6 +166,30 @@ export function QuizEditor({ quiz, version, questions: initialQuestions }: Props
         });
 
         if (result.id) {
+          // Upload the snapshot taken from the source document, if any
+          let mediaKey: string | null = null;
+          if (gq.image) {
+            try {
+              const formData = new FormData();
+              formData.append("file", new File([gq.image], "snapshot.png", { type: "image/png" }));
+              formData.append("quizId", quiz.id);
+              formData.append("questionId", result.id);
+              const uploadRes = await fetch("/api/internal/uploads", {
+                method: "POST",
+                body: formData,
+              });
+              if (!uploadRes.ok) throw new Error("upload failed");
+              mediaKey = (await uploadRes.json()).key as string;
+              await updateQuestion(quiz.id, result.id, {
+                media_key: mediaKey,
+                media_alt: "Figure",
+              });
+            } catch {
+              mediaKey = null;
+              failedImages++;
+            }
+          }
+
           // Add options
           const savedOptions: Array<{ id: string; label: Record<string, unknown>; is_correct: boolean; position: number; media_key: string | null; media_alt: string | null }> = [];
           for (const opt of gq.options) {
@@ -205,8 +222,8 @@ export function QuizEditor({ quiz, version, questions: initialQuestions }: Props
             numeric_tolerance: 0,
             numeric_unit: null,
             explanation: gq.explanation ? { text: gq.explanation } : null,
-            media_key: null,
-            media_alt: null,
+            media_key: mediaKey,
+            media_alt: mediaKey ? "Figure" : null,
             position: newQuestions.length + 1,
             question_options: savedOptions,
           });
@@ -215,6 +232,9 @@ export function QuizEditor({ quiz, version, questions: initialQuestions }: Props
       setQuestions(newQuestions);
       setSelectedIndex(newQuestions.length - 1);
       toast.success(`${generated.length} questions saved`);
+      if (failedImages > 0) {
+        toast.error(`${failedImages} picture(s) could not be uploaded — add them manually`);
+      }
     });
   }
 
